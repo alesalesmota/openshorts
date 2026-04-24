@@ -2,12 +2,15 @@ scenedetect
 ultralytics
 torch
 torchvision
+numpy==1.26.4
+opencv-python==4.11.0.86
+opencv-contrib-python==4.11.0.86
 tqdm
 yt-dlp
 faster-whisper
 google-genai
 python-dotenv
-mediapipe==0.10.33
+mediapipe==0.10.14
 fastapi
 uvicorn
 python-multipart

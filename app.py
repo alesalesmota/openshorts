@@ -7,6 +7,7 @@ import shutil
 import glob
 import time
 import asyncio
+import sys
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 from typing import Dict, Optional, List
@@ -17,6 +18,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 load_dotenv()
+
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="replace")
 
 # Constants
 UPLOAD_DIR = "uploads"
@@ -464,8 +469,22 @@ async def lifespan(app: FastAPI):
     # Start worker and cleanup
     worker_task = asyncio.create_task(process_queue())
     cleanup_task = asyncio.create_task(cleanup_jobs())
-    yield
-    # Cleanup (optional: cancel worker)
+    for name, task in (("job worker", worker_task), ("cleanup worker", cleanup_task)):
+        task.add_done_callback(lambda done_task, task_name=name: _log_background_task_result(task_name, done_task))
+    try:
+        yield
+    finally:
+        for task in (worker_task, cleanup_task):
+            task.cancel()
+
+
+def _log_background_task_result(name: str, task: asyncio.Task):
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        print(f"Background task crashed: {name}: {e}", flush=True)
 
 app = FastAPI(lifespan=lifespan)
 

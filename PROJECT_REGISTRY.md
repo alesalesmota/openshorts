@@ -102,3 +102,5 @@
 - A minimal Azure chat completions ping returned `{"ok":true}`.
 - Candidate models available in that resource include `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-5.4-mini`, and newer listed models as of the local CLI check on 2026-04-24.
 - Do not store Azure API keys in repo files. Retrieve keys via CLI only when configuring local runtime, Key Vault, or explicit user-approved deployment flow.
+- Local backend worker startup is sensitive to Windows stdio encoding when launched headless. `app.py` now reconfigures stdout/stderr as UTF-8 and logs crashed background tasks so queue failures are visible.
+- Local Python runtime for the clip pipeline is pinned to `mediapipe==0.10.14`, `numpy==1.26.4`, and OpenCV `4.11.0.86` because `mediapipe==0.10.33` no longer exposes the `mp.solutions` API used by `main.py`.
