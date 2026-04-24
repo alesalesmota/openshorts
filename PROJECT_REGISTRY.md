@@ -82,3 +82,12 @@
 - Cost guideline: prefer low-cost resources by default and stop/delete compute when not actively testing video jobs.
 - Non-mutating Azure CLI account check passes.
 - `az vm list-usage --location eastus` returned an empty list in this subscription at the time of implementation; no Azure resources were created.
+- Existing Azure AI Services resource found:
+  - name: `blue-008-36-2109-resource`
+  - resource group: `rg-Blue_008_36-2109`
+  - region: `eastus2`
+  - endpoint: `https://blue-008-36-2109-resource.cognitiveservices.azure.com/`
+  - sku: `S0`
+- No Azure OpenAI model deployments exist in that resource yet.
+- Candidate models available in that resource include `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-5.4-mini`, and newer listed models as of the local CLI check on 2026-04-24.
+- Do not store Azure API keys in repo files. Retrieve keys via CLI only when configuring local runtime, Key Vault, or explicit user-approved deployment flow.
