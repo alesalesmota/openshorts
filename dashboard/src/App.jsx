@@ -1,20 +1,37 @@
-import React, { useState, useEffect } from 'react';
-import { Upload, FileVideo, Sparkles, Youtube, Instagram, Share2, LogOut, ChevronDown, Check, Activity, LayoutDashboard, Settings, PlusCircle, History, Menu, X, Terminal, Shield, LayoutGrid, Image, Globe, RotateCcw, Calendar } from 'lucide-react';
-import KeyInput from './components/KeyInput';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Activity,
+  Check,
+  ChevronDown,
+  FileVideo,
+  Instagram,
+  LayoutDashboard,
+  RotateCcw,
+  Scissors,
+  Settings,
+  Shield,
+  Terminal,
+  Upload,
+  Youtube,
+} from 'lucide-react';
 import MediaInput from './components/MediaInput';
-import ResultCard from './components/ResultCard';
 import ProcessingAnimation from './components/ProcessingAnimation';
-// import Gallery from './components/Gallery';
-import ThumbnailStudio from './components/ThumbnailStudio';
-import SaaShortsTab from './components/SaaShortsTab';
-import UGCGallery from './components/UGCGallery';
-import ScheduleWeekModal from './components/ScheduleWeekModal';
+import ResultCard from './components/ResultCard';
 import { getApiUrl } from './config';
 
-// Enhanced "Encryption" using XOR + Base64 with a Salt
-// This is better than plain Base64 but still client-side.
-const SECRET_KEY = import.meta.env.VITE_ENCRYPTION_KEY || "OpenShorts-Static-Salt-Change-Me";
-const ENCRYPTION_PREFIX = "ENC:";
+const SECRET_KEY = import.meta.env.VITE_ENCRYPTION_KEY || 'OpenShorts-Static-Salt-Change-Me';
+const ENCRYPTION_PREFIX = 'ENC:';
+const SESSION_KEY = 'openshorts_session';
+const SESSION_MAX_AGE = 3600000;
+
+const providerOptions = [
+  { value: 'gemini', label: 'Gemini', defaultModel: 'gemini-2.5-flash' },
+  { value: 'openai', label: 'OpenAI', defaultModel: 'gpt-4o-mini' },
+  { value: 'azure-openai', label: 'Azure OpenAI', defaultModel: '' },
+  { value: 'openrouter', label: 'OpenRouter', defaultModel: 'openai/gpt-4o-mini' },
+  { value: 'nvidia-nim', label: 'NVIDIA NIM', defaultModel: 'meta/llama-3.1-70b-instruct' },
+  { value: 'custom-openai-compatible', label: 'Custom OpenAI-compatible', defaultModel: '' },
+];
 
 const encrypt = (text) => {
   if (!text) return '';
@@ -23,168 +40,133 @@ const encrypt = (text) => {
       String.fromCharCode(c.charCodeAt(0) ^ SECRET_KEY.charCodeAt(i % SECRET_KEY.length))
     ).join('');
     return ENCRYPTION_PREFIX + btoa(xor);
-  } catch (e) {
-    console.error("Encryption failed", e);
+  } catch {
     return text;
   }
 };
 
 const decrypt = (text) => {
   if (!text) return '';
-  if (text.startsWith(ENCRYPTION_PREFIX)) {
-    try {
-      const raw = text.slice(ENCRYPTION_PREFIX.length);
-      // Check if it's plain base64 or our custom XOR (simple try)
-      const xor = atob(raw);
-      const result = xor.split('').map((c, i) =>
-        String.fromCharCode(c.charCodeAt(0) ^ SECRET_KEY.charCodeAt(i % SECRET_KEY.length))
-      ).join('');
-      return result;
-    } catch (e) {
-      // Fallback if decryption fails (might be old plain text)
-      return '';
-    }
+  if (!text.startsWith(ENCRYPTION_PREFIX)) return text;
+  try {
+    const xor = atob(text.slice(ENCRYPTION_PREFIX.length));
+    return xor.split('').map((c, i) =>
+      String.fromCharCode(c.charCodeAt(0) ^ SECRET_KEY.charCodeAt(i % SECRET_KEY.length))
+    ).join('');
+  } catch {
+    return '';
   }
-  // Backward compatibility: If no prefix, assume old plain text (or return empty if you want to force re-login)
-  // For migration: Return text as is, so it populates the field, and next save will encrypt it.
-  return text;
 };
 
-// Simple TikTok icon sine Lucide might not have it or it varies
-const TikTokIcon = ({ size = 16, className = "" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
-    <path d="M19.589 6.686a4.793 4.793 0 0 1-3.77-4.245V2h-3.445v13.672a2.896 2.896 0 0 1-5.201 1.743l-.002-.001.002.001a2.895 2.895 0 0 1 3.183-4.51v-3.5a6.329 6.329 0 0 0-5.394 10.692 6.33 6.33 0 0 0 10.857-4.424V8.687a8.182 8.182 0 0 0 4.773 1.526V6.79a4.831 4.831 0 0 1-1.003-.104z" />
-  </svg>
-);
-
-const UserProfileSelector = ({ profiles, selectedUserId, onSelect }) => {
-  const [isOpen, setIsOpen] = useState(false);
-
-  if (!profiles || profiles.length === 0) return null;
-
-  const selectedProfile = profiles.find(p => p.username === selectedUserId) || profiles[0];
-
-  return (
-    <div className="relative z-50">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-between bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 transition-colors min-w-[180px]"
-      >
-        <span className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center text-[10px] font-bold text-white">
-            {selectedProfile?.username?.substring(0, 1).toUpperCase() || "U"}
-          </div>
-          <span className="font-medium text-white truncate max-w-[100px]">{selectedProfile?.username || "Select User"}</span>
-        </span>
-        <ChevronDown size={14} className={`text-zinc-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-
-      {isOpen && (
-        <div className="absolute top-full mt-2 right-0 w-64 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
-          <div className="max-h-60 overflow-y-auto custom-scrollbar">
-            {profiles.map((profile) => (
-              <button
-                key={profile.username}
-                onClick={() => {
-                  onSelect(profile.username);
-                  setIsOpen(false);
-                }}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors text-left group border-b border-white/5 last:border-0"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center text-xs font-bold text-white border border-white/10 shrink-0">
-                    {profile.username.substring(0, 2).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-zinc-200 group-hover:text-white transition-colors truncate">
-                      {profile.username}
-                    </div>
-                    <div className="flex gap-2 mt-0.5">
-                      {/* Status indicators */}
-                      <div className={`flex items-center gap-1 text-[10px] ${profile.connected.includes('tiktok') ? 'text-zinc-300' : 'text-zinc-600'}`}>
-                        <TikTokIcon size={10} />
-                      </div>
-                      <div className={`flex items-center gap-1 text-[10px] ${profile.connected.includes('instagram') ? 'text-pink-400' : 'text-zinc-600'}`}>
-                        <Instagram size={10} />
-                      </div>
-                      <div className={`flex items-center gap-1 text-[10px] ${profile.connected.includes('youtube') ? 'text-red-400' : 'text-zinc-600'}`}>
-                        <Youtube size={10} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {selectedUserId === profile.username && <Check size={14} className="text-primary shrink-0" />}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+const buildAiHeaders = (aiConfig) => {
+  const headers = {
+    'X-AI-Provider': aiConfig.provider,
+    'X-AI-API-Key': aiConfig.apiKey,
+  };
+  if (aiConfig.model) headers['X-AI-Model'] = aiConfig.model;
+  if (aiConfig.baseUrl) headers['X-AI-Base-URL'] = aiConfig.baseUrl;
+  if (aiConfig.azureEndpoint) headers['X-Azure-OpenAI-Endpoint'] = aiConfig.azureEndpoint;
+  if (aiConfig.azureDeployment) headers['X-Azure-OpenAI-Deployment'] = aiConfig.azureDeployment;
+  if (aiConfig.azureApiVersion) headers['X-Azure-OpenAI-API-Version'] = aiConfig.azureApiVersion;
+  if (aiConfig.provider === 'gemini') headers['X-Gemini-Key'] = aiConfig.apiKey;
+  return headers;
 };
 
-const SESSION_KEY = 'openshorts_session';
-const SESSION_MAX_AGE = 3600000; // 1 hour (matches server job retention)
-
-// Mock polling function
 const pollJob = async (jobId) => {
   const res = await fetch(getApiUrl(`/api/status/${jobId}`));
   if (!res.ok) throw new Error('Status check failed');
   return res.json();
 };
 
-function App() {
-  const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_key') || '');
-  // Social API State - Load encrypted or plain
-  const [uploadPostKey, setUploadPostKey] = useState(() => {
-    const stored = localStorage.getItem('uploadPostKey_v3');
-    if (stored) return decrypt(stored);
-    return '';
-  });
-  // ElevenLabs API State - Load encrypted
-  const [elevenLabsKey, setElevenLabsKey] = useState(() => {
-    const stored = localStorage.getItem('elevenLabsKey_v1');
-    if (stored) return decrypt(stored);
-    return '';
-  });
+const TikTokIcon = ({ size = 16, className = '' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M19.589 6.686a4.793 4.793 0 0 1-3.77-4.245V2h-3.445v13.672a2.896 2.896 0 0 1-5.201 1.743 2.895 2.895 0 0 1 3.183-4.51v-3.5a6.329 6.329 0 0 0-5.394 10.692 6.33 6.33 0 0 0 10.857-4.424V8.687a8.182 8.182 0 0 0 4.773 1.526V6.79a4.831 4.831 0 0 1-1.003-.104z" />
+  </svg>
+);
 
-  // fal.ai API State - Load encrypted
-  const [falKey, setFalKey] = useState(() => {
-    const stored = localStorage.getItem('falKey_v1');
-    if (stored) return decrypt(stored);
-    return '';
-  });
+const UserProfileSelector = ({ profiles, selectedUserId, onSelect }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  if (!profiles.length) return null;
+  const selectedProfile = profiles.find((p) => p.username === selectedUserId) || profiles[0];
 
+  return (
+    <div className="relative z-50">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex min-w-[180px] items-center justify-between rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-white/5"
+      >
+        <span className="flex items-center gap-2">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">
+            {selectedProfile?.username?.substring(0, 1).toUpperCase() || 'U'}
+          </span>
+          <span className="max-w-[100px] truncate font-medium text-white">{selectedProfile?.username || 'Select user'}</span>
+        </span>
+        <ChevronDown size={14} className={`text-zinc-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 top-full mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-[#1a1a1a] shadow-2xl">
+          {profiles.map((profile) => (
+            <button
+              key={profile.username}
+              onClick={() => {
+                onSelect(profile.username);
+                setIsOpen(false);
+              }}
+              className="flex w-full items-center justify-between border-b border-white/5 px-4 py-3 text-left transition-colors last:border-0 hover:bg-white/5"
+            >
+              <span>
+                <span className="block text-sm font-medium text-zinc-200">{profile.username}</span>
+                <span className="mt-1 flex gap-2 text-zinc-600">
+                  <TikTokIcon size={10} className={profile.connected.includes('tiktok') ? 'text-zinc-300' : ''} />
+                  <Instagram size={10} className={profile.connected.includes('instagram') ? 'text-pink-400' : ''} />
+                  <Youtube size={10} className={profile.connected.includes('youtube') ? 'text-red-400' : ''} />
+                </span>
+              </span>
+              {selectedUserId === profile.username && <Check size={14} className="text-primary" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [aiConfig, setAiConfig] = useState(() => {
+    const provider = localStorage.getItem('ai_provider') || 'gemini';
+    const providerMeta = providerOptions.find((p) => p.value === provider) || providerOptions[0];
+    return {
+      provider,
+      model: localStorage.getItem('ai_model') || providerMeta.defaultModel,
+      apiKey: decrypt(localStorage.getItem('aiApiKey_v1')) || localStorage.getItem('gemini_key') || '',
+      baseUrl: localStorage.getItem('ai_base_url') || '',
+      azureEndpoint: localStorage.getItem('azure_openai_endpoint') || '',
+      azureDeployment: localStorage.getItem('azure_openai_deployment') || '',
+      azureApiVersion: localStorage.getItem('azure_openai_api_version') || '2024-10-21',
+    };
+  });
+  const [uploadPostKey, setUploadPostKey] = useState(() => decrypt(localStorage.getItem('uploadPostKey_v3')) || '');
   const [uploadUserId, setUploadUserId] = useState(() => localStorage.getItem('uploadUserId') || '');
-  const [userProfiles, setUserProfiles] = useState([]); // List of {username, connected: []}
+  const [userProfiles, setUserProfiles] = useState([]);
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [jobId, setJobId] = useState(null);
-  const [status, setStatus] = useState('idle'); // idle, processing, complete, error
+  const [status, setStatus] = useState('idle');
   const [results, setResults] = useState(null);
   const [logs, setLogs] = useState([]);
   const [logsVisible, setLogsVisible] = useState(true);
   const [processingMedia, setProcessingMedia] = useState(null);
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, settings
-
   const [sessionRecovered, setSessionRecovered] = useState(false);
-  const [showScheduleWeek, setShowScheduleWeek] = useState(false);
-
-  // Sync state for original video playback
   const [syncedTime, setSyncedTime] = useState(0);
   const [isSyncedPlaying, setIsSyncedPlaying] = useState(false);
   const [syncTrigger, setSyncTrigger] = useState(0);
 
-  const handleClipPlay = (startTime) => {
-    setSyncedTime(startTime);
-    setIsSyncedPlaying(true);
-    setSyncTrigger(prev => prev + 1);
-  };
+  const providerLabel = useMemo(
+    () => providerOptions.find((p) => p.value === aiConfig.provider)?.label || aiConfig.provider,
+    [aiConfig.provider]
+  );
 
-  const handleClipPause = () => {
-    setIsSyncedPlaying(false);
-  };
-
-  // Session Recovery: Restore on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem(SESSION_KEY);
@@ -198,69 +180,49 @@ function App() {
         setJobId(session.jobId);
         setResults(session.results || null);
         if (session.processingMedia) setProcessingMedia(session.processingMedia);
-        if (session.activeTab) setActiveTab(session.activeTab);
-        // If was processing, resume polling; if complete/error, just show results
         setStatus(session.status === 'processing' ? 'processing' : session.status);
         setSessionRecovered(true);
         setTimeout(() => setSessionRecovered(false), 5000);
       }
-    } catch (e) {
+    } catch {
       localStorage.removeItem(SESSION_KEY);
     }
   }, []);
 
-  // Session Recovery: Save state changes
   useEffect(() => {
     if (status === 'idle') {
       localStorage.removeItem(SESSION_KEY);
       return;
     }
-    try {
-      const sessionData = {
-        jobId,
-        status,
-        results,
-        processingMedia: processingMedia?.type === 'url' ? processingMedia : null,
-        activeTab,
-        timestamp: Date.now()
-      };
-      localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData));
-    } catch (e) {
-      // localStorage full or serialization error - ignore
-    }
-  }, [jobId, status, results, activeTab]);
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      jobId,
+      status,
+      results,
+      processingMedia: processingMedia?.type === 'url' ? processingMedia : null,
+      timestamp: Date.now(),
+    }));
+  }, [jobId, status, results, processingMedia]);
 
   useEffect(() => {
-    // Encrypt Gemini Key too for consistency if desired, but user asked specifically about Social integration not saving well.
-    // For now keeping gemini plain for compatibility unless requested.
-    if (apiKey) localStorage.setItem('gemini_key', apiKey);
-  }, [apiKey]);
+    localStorage.setItem('ai_provider', aiConfig.provider);
+    localStorage.setItem('ai_model', aiConfig.model || '');
+    localStorage.setItem('ai_base_url', aiConfig.baseUrl || '');
+    localStorage.setItem('azure_openai_endpoint', aiConfig.azureEndpoint || '');
+    localStorage.setItem('azure_openai_deployment', aiConfig.azureDeployment || '');
+    localStorage.setItem('azure_openai_api_version', aiConfig.azureApiVersion || '');
+    if (aiConfig.apiKey) {
+      localStorage.setItem('aiApiKey_v1', encrypt(aiConfig.apiKey));
+      if (aiConfig.provider === 'gemini') localStorage.setItem('gemini_key', aiConfig.apiKey);
+    }
+  }, [aiConfig]);
 
   useEffect(() => {
-    if (uploadPostKey) {
-      localStorage.setItem('uploadPostKey_v3', encrypt(uploadPostKey));
-    }
-    if (uploadUserId) {
-      localStorage.setItem('uploadUserId', uploadUserId);
-    }
+    if (uploadPostKey) localStorage.setItem('uploadPostKey_v3', encrypt(uploadPostKey));
+    if (uploadUserId) localStorage.setItem('uploadUserId', uploadUserId);
   }, [uploadPostKey, uploadUserId]);
 
   useEffect(() => {
-    if (elevenLabsKey) {
-      localStorage.setItem('elevenLabsKey_v1', encrypt(elevenLabsKey));
-    }
-  }, [elevenLabsKey]);
-
-  useEffect(() => {
-    if (falKey) {
-      localStorage.setItem('falKey_v1', encrypt(falKey));
-    }
-  }, [falKey]);
-
-  useEffect(() => {
-    if (uploadPostKey && userProfiles.length === 0) {
-      fetchUserProfiles();
-    }
+    if (uploadPostKey && !userProfiles.length) fetchUserProfiles();
   }, [uploadPostKey]);
 
   useEffect(() => {
@@ -269,71 +231,56 @@ function App() {
       interval = setInterval(async () => {
         try {
           const data = await pollJob(jobId);
-          console.log("Job status:", data);
-
-          // Update results if available (real-time)
-          if (data.result) {
-            setResults(data.result);
-          }
-
+          if (data.result) setResults(data.result);
           if (data.status === 'completed') {
             setStatus('complete');
             clearInterval(interval);
           } else if (data.status === 'failed') {
             setStatus('error');
-            const errorMsg = data.error || (data.logs && data.logs.length > 0 ? data.logs[data.logs.length - 1] : "Process failed");
-            setLogs(prev => [...prev, "Error: " + errorMsg]);
+            setLogs((prev) => [...prev, `Error: ${data.error || data.logs?.at(-1) || 'Process failed'}`]);
             clearInterval(interval);
-          } else {
-            // Update logs if available
-            if (data.logs) setLogs(data.logs);
+          } else if (data.logs) {
+            setLogs(data.logs);
           }
         } catch (e) {
-          console.error("Polling error", e);
+          console.error('Polling error', e);
         }
       }, 2000);
     }
     return () => clearInterval(interval);
   }, [status, jobId]);
 
-
   const fetchUserProfiles = async () => {
     if (!uploadPostKey) return;
     try {
       const res = await fetch(getApiUrl('/api/social/user'), {
-        headers: { 'X-Upload-Post-Key': uploadPostKey }
+        headers: { 'X-Upload-Post-Key': uploadPostKey },
       });
-      if (!res.ok) throw new Error("Failed to fetch");
+      if (!res.ok) throw new Error('Failed to fetch Upload-Post profiles');
       const data = await res.json();
-      if (data.profiles && data.profiles.length > 0) {
-        setUserProfiles(data.profiles);
-        // Auto select first if none selected
-        if (!uploadUserId) {
-          setUploadUserId(data.profiles[0].username);
-        }
-      } else {
-        alert("No profiles found for this API Key.");
-      }
+      const profiles = data.profiles || [];
+      setUserProfiles(profiles);
+      if (profiles.length && !uploadUserId) setUploadUserId(profiles[0].username);
     } catch (e) {
-      alert("Error fetching User Profiles. Please check key.");
       console.error(e);
+      alert('Error fetching Upload-Post profiles. Check key.');
     }
   };
 
   const handleProcess = async (data) => {
-    if (!apiKey) {
+    if (!aiConfig.apiKey) {
       setShowKeyModal(true);
       return;
     }
+
     setStatus('processing');
-    setLogs(["Starting process..."]);
+    setLogs([`Starting clip analysis with ${providerLabel}...`]);
     setResults(null);
     setProcessingMedia(data);
 
     try {
       let body;
-      const headers = { 'X-Gemini-Key': apiKey };
-
+      const headers = buildAiHeaders(aiConfig);
       if (data.type === 'url') {
         headers['Content-Type'] = 'application/json';
         body = JSON.stringify({ url: data.payload });
@@ -343,19 +290,13 @@ function App() {
         body = formData;
       }
 
-      const res = await fetch(getApiUrl('/api/process'), {
-        method: 'POST',
-        headers: data.type === 'url' ? headers : { 'X-Gemini-Key': apiKey },
-        body
-      });
-
+      const res = await fetch(getApiUrl('/api/process'), { method: 'POST', headers, body });
       if (!res.ok) throw new Error(await res.text());
       const resData = await res.json();
       setJobId(resData.job_id);
-
     } catch (e) {
       setStatus('error');
-      setLogs(l => [...l, `Error starting job: ${e.message}`]);
+      setLogs((prev) => [...prev, `Error starting job: ${e.message}`]);
     }
   };
 
@@ -368,561 +309,338 @@ function App() {
     localStorage.removeItem(SESSION_KEY);
   };
 
-  // --- UI Components ---
+  const handleClipPlay = (startTime) => {
+    setSyncedTime(startTime);
+    setIsSyncedPlaying(true);
+    setSyncTrigger((prev) => prev + 1);
+  };
 
   const Sidebar = () => (
-    <div className="w-20 lg:w-64 bg-surface border-r border-white/5 flex flex-col h-full shrink-0 transition-all duration-300">
-      <div className="p-6 flex items-center gap-3">
-        <div className="w-8 h-8 bg-white/5 rounded-lg flex items-center justify-center shrink-0 overflow-hidden border border-white/5">
-          <img src="/logo-openshorts.png" alt="Logo" className="w-full h-full object-cover" />
+    <div className="flex h-full w-20 shrink-0 flex-col border-r border-white/5 bg-surface transition-all duration-300 lg:w-64">
+      <div className="flex items-center gap-3 p-6">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/5 bg-white/5">
+          <img src="/logo-openshorts.png" alt="Logo" className="h-full w-full object-cover" />
         </div>
-        <span className="font-bold text-lg text-white hidden lg:block tracking-tight">OpenShorts</span>
+        <span className="hidden text-lg font-bold tracking-tight text-white lg:block">OpenShorts</span>
       </div>
 
-      <nav className="flex-1 px-4 py-4 space-y-2">
+      <nav className="flex-1 space-y-2 px-4 py-4">
         <button
           onClick={() => setActiveTab('dashboard')}
-          className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-colors ${activeTab === 'dashboard' ? 'bg-primary/10 text-primary' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
+          className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 transition-colors ${activeTab === 'dashboard' ? 'bg-primary/10 text-primary' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
         >
           <LayoutDashboard size={20} />
-          <span className="font-medium hidden lg:block">Clip Generator</span>
+          <span className="hidden font-medium lg:block">Clip Generator</span>
         </button>
-
-        <button
-          onClick={() => setActiveTab('saasshorts')}
-          className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-colors ${activeTab === 'saasshorts' ? 'bg-violet-500/10 text-violet-400' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
-        >
-          <Sparkles size={20} />
-          <span className="font-medium hidden lg:block">AI Shorts</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('ugc-gallery')}
-          className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-colors ${activeTab === 'ugc-gallery' ? 'bg-violet-500/10 text-violet-400' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
-        >
-          <LayoutGrid size={20} />
-          <span className="font-medium hidden lg:block">UGC Gallery</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('thumbnails')}
-          className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-colors ${activeTab === 'thumbnails' ? 'bg-primary/10 text-primary' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
-        >
-          <Image size={20} />
-          <span className="font-medium hidden lg:block">YouTube Studio</span>
-        </button>
-
-        {/* <button
-          onClick={() => setActiveTab('gallery')}
-          className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-colors ${activeTab === 'gallery' ? 'bg-primary/10 text-primary' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
-        >
-          <LayoutGrid size={20} />
-          <span className="font-medium hidden lg:block">Gallery</span>
-        </button> */}
-
         <button
           onClick={() => setActiveTab('settings')}
-          className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-colors ${activeTab === 'settings' ? 'bg-primary/10 text-primary' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
+          className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 transition-colors ${activeTab === 'settings' ? 'bg-primary/10 text-primary' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
         >
           <Settings size={20} />
-          <span className="font-medium hidden lg:block">Settings</span>
+          <span className="hidden font-medium lg:block">Settings</span>
         </button>
       </nav>
 
-      <div className="p-4 border-t border-white/5 space-y-2">
-        <a
-          href="#"
-          onClick={(e) => { e.preventDefault(); localStorage.removeItem('openshorts_skip_landing'); window.location.hash = ''; window.location.reload(); }}
-          className="flex items-center gap-2 p-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
-        >
-          <div className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center shrink-0">
-            <Globe size={16} />
-          </div>
-          <div className="hidden lg:block overflow-hidden">
-            <p className="text-sm font-bold text-white leading-none mb-0.5">Landing Page</p>
-            <p className="text-[10px] text-zinc-400 group-hover:text-zinc-300 transition-colors truncate">View website</p>
-          </div>
-        </a>
+      <div className="border-t border-white/5 p-4">
         <a
           href="https://github.com/mutonby/openshorts"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 p-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
+          className="flex items-center gap-2 rounded-xl bg-white/5 p-3 transition-colors hover:bg-white/10"
         >
-          <div className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center shrink-0">
-            <svg height="20" viewBox="0 0 16 16" version="1.1" width="20" aria-hidden="true"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-black">
+            <Scissors size={16} />
           </div>
-          <div className="hidden lg:block overflow-hidden">
-            <p className="text-sm font-bold text-white leading-none mb-0.5">Open Source</p>
-            <p className="text-[10px] text-zinc-400 group-hover:text-zinc-300 transition-colors truncate">Free & Community Driven</p>
+          <div className="hidden overflow-hidden lg:block">
+            <p className="mb-0.5 text-sm font-bold leading-none text-white">Focused Clips</p>
+            <p className="truncate text-[10px] text-zinc-400">Long video cutting workflow</p>
           </div>
         </a>
       </div>
     </div>
   );
 
-  return (
-    <div className="flex h-screen bg-background overflow-hidden selection:bg-primary/30">
-      <Sidebar />
+  const SettingsView = () => (
+    <div className="mx-auto max-w-4xl space-y-8 p-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Settings</h1>
+          <p className="mt-1 text-sm text-zinc-500">Configure AI analysis and social publishing.</p>
+        </div>
+        <div className="flex items-center gap-2 rounded-full border border-green-500/20 bg-green-500/10 px-3 py-1 text-[10px] font-medium text-green-400">
+          <Shield size={12} /> Keys stay in this browser
+        </div>
+      </div>
 
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        {/* Background Gradients */}
-        <div className="absolute inset-0 overflow-hidden -z-10 pointer-events-none">
-          <div className="absolute -top-[10%] -right-[10%] w-[50%] h-[50%] bg-primary/5 rounded-full blur-[120px]" />
+      <section className="glass-panel p-6">
+        <div className="mb-6 flex items-center gap-3">
+          <div className="rounded-lg bg-primary/20 p-2 text-primary">
+            <Settings size={20} />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-white">AI Provider</h2>
+            <p className="text-xs text-zinc-500">Used for transcript-to-clips analysis.</p>
+          </div>
         </div>
 
-        {/* Top Header */}
-        <header className="h-16 border-b border-white/5 bg-background/50 backdrop-blur-md flex items-center justify-between px-6 shrink-0 z-10">
-          <div className="flex items-center gap-4">
-            {status !== 'idle' && (
-              <button
-                onClick={handleReset}
-                className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors"
-              >
-                <PlusCircle size={16} />
-                <span className="hidden sm:inline">New Project</span>
-              </button>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-2">
+            <span className="block text-sm text-zinc-400">Provider</span>
+            <select
+              value={aiConfig.provider}
+              onChange={(e) => {
+                const next = providerOptions.find((p) => p.value === e.target.value);
+                setAiConfig((prev) => ({ ...prev, provider: e.target.value, model: prev.model || next?.defaultModel || '' }));
+              }}
+              className="input-field"
+            >
+              {providerOptions.map((provider) => (
+                <option key={provider.value} value={provider.value}>{provider.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-2">
+            <span className="block text-sm text-zinc-400">Model / Deployment</span>
+            <input
+              value={aiConfig.model}
+              onChange={(e) => setAiConfig((prev) => ({ ...prev, model: e.target.value }))}
+              className="input-field font-mono"
+              placeholder="gemini-2.5-flash"
+            />
+          </label>
+
+          <label className="space-y-2 md:col-span-2">
+            <span className="block text-sm text-zinc-400">API Key</span>
+            <input
+              type="password"
+              value={aiConfig.apiKey}
+              onChange={(e) => setAiConfig((prev) => ({ ...prev, apiKey: e.target.value }))}
+              className="input-field font-mono"
+              placeholder="Provider API key"
+            />
+          </label>
+
+          {['openai', 'openrouter', 'nvidia-nim', 'custom-openai-compatible'].includes(aiConfig.provider) && (
+            <label className="space-y-2 md:col-span-2">
+              <span className="block text-sm text-zinc-400">Base URL</span>
+              <input
+                value={aiConfig.baseUrl}
+                onChange={(e) => setAiConfig((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                className="input-field font-mono"
+                placeholder="Optional for OpenAI/OpenRouter/NVIDIA, required for custom"
+              />
+            </label>
+          )}
+
+          {aiConfig.provider === 'azure-openai' && (
+            <>
+              <label className="space-y-2">
+                <span className="block text-sm text-zinc-400">Azure Endpoint</span>
+                <input
+                  value={aiConfig.azureEndpoint}
+                  onChange={(e) => setAiConfig((prev) => ({ ...prev, azureEndpoint: e.target.value }))}
+                  className="input-field font-mono"
+                  placeholder="https://resource.openai.azure.com"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="block text-sm text-zinc-400">Deployment</span>
+                <input
+                  value={aiConfig.azureDeployment}
+                  onChange={(e) => setAiConfig((prev) => ({ ...prev, azureDeployment: e.target.value }))}
+                  className="input-field font-mono"
+                  placeholder="deployment-name"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="block text-sm text-zinc-400">API Version</span>
+                <input
+                  value={aiConfig.azureApiVersion}
+                  onChange={(e) => setAiConfig((prev) => ({ ...prev, azureApiVersion: e.target.value }))}
+                  className="input-field font-mono"
+                  placeholder="2024-10-21"
+                />
+              </label>
+            </>
+          )}
+        </div>
+      </section>
+
+      <section className="glass-panel p-6">
+        <div className="mb-6 flex items-center gap-3">
+          <div className="rounded-lg bg-pink-500/20 p-2 text-pink-400">
+            <Upload size={20} />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-white">Upload-Post</h2>
+            <p className="text-xs text-zinc-500">Publish generated clips to TikTok, Instagram Reels, and YouTube Shorts.</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <label className="block space-y-2">
+            <span className="block text-sm text-zinc-400">Upload-Post API Key</span>
+            <input
+              type="password"
+              value={uploadPostKey}
+              onChange={(e) => setUploadPostKey(e.target.value)}
+              className="input-field font-mono"
+              placeholder="Upload-Post API key"
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={fetchUserProfiles}
+              disabled={!uploadPostKey}
+              className="rounded-xl bg-white/10 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Fetch profiles
+            </button>
+            <UserProfileSelector profiles={userProfiles} selectedUserId={uploadUserId} onSelect={setUploadUserId} />
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-background selection:bg-primary/30">
+      <Sidebar />
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/5 bg-surface/50 px-6 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-bold text-white">
+              {activeTab === 'dashboard' ? 'Clip Generator' : 'Settings'}
+            </h1>
+            {activeTab === 'dashboard' && (
+              <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs text-primary">
+                {providerLabel}{aiConfig.model ? ` / ${aiConfig.model}` : ''}
+              </span>
             )}
           </div>
-
-          <div className="flex items-center gap-4">
-            {userProfiles.length > 0 && (
-              <UserProfileSelector
-                profiles={userProfiles}
-                selectedUserId={uploadUserId}
-                onSelect={setUploadUserId}
-              />
-            )}
-
-            {!apiKey && (
-              <span className="text-xs text-amber-500 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
-                API Key Missing
+          <div className="flex items-center gap-3">
+            {uploadPostKey && (
+              <span className="hidden items-center gap-2 rounded-full border border-pink-500/20 bg-pink-500/10 px-3 py-1 text-xs text-pink-300 sm:flex">
+                <Upload size={12} /> Upload-Post ready
               </span>
+            )}
+            {status !== 'idle' && (
+              <button onClick={handleReset} className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-white">
+                <RotateCcw size={14} /> New job
+              </button>
             )}
           </div>
         </header>
 
-        {/* Session Recovery Banner */}
-        {sessionRecovered && (
-          <div className="mx-6 mt-2 p-3 bg-primary/10 border border-primary/20 rounded-xl flex items-center justify-between animate-[fadeIn_0.3s_ease-out] shrink-0">
-            <div className="flex items-center gap-2 text-sm text-primary">
-              <RotateCcw size={16} />
-              <span className="font-medium">Session recovered</span>
-              <span className="text-zinc-400 text-xs">Your previous work has been restored.</span>
+        {activeTab === 'settings' && <SettingsView />}
+
+        {activeTab === 'dashboard' && status === 'idle' && (
+          <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto p-6">
+            <div className="mb-10 text-center">
+              <div className="mb-6 inline-flex rounded-full border border-white/10 bg-white/5 p-3 text-primary">
+                <FileVideo size={32} />
+              </div>
+              <h2 className="mb-3 text-4xl font-bold tracking-tight text-white">Cut long videos into shorts</h2>
+              <p className="mx-auto max-w-xl text-zinc-400">
+                Upload a long video or paste a YouTube URL. The selected AI provider finds clip-worthy moments; OpenShorts crops, edits, and prepares clips for publishing.
+              </p>
             </div>
-            <button onClick={() => setSessionRecovered(false)} className="text-zinc-500 hover:text-white transition-colors">
-              <X size={14} />
-            </button>
+            <MediaInput onProcess={handleProcess} isProcessing={false} />
           </div>
         )}
 
-        {/* Main Workspace */}
-        <div className="flex-1 overflow-hidden relative">
-
-          {/* View: Settings */}
-          {activeTab === 'settings' && (
-            <div className="h-full overflow-y-auto p-8 max-w-2xl mx-auto animate-[fadeIn_0.3s_ease-out]">
-              <div className="flex items-center justify-between mb-8">
-                <h1 className="text-2xl font-bold">Settings</h1>
-                <div className="px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full text-[10px] text-green-400 font-medium flex items-center gap-2">
-                  <Shield size={12} /> Privacy: keys only live in your browser (sent to backend just to process)
-                </div>
-              </div>
-              <KeyInput onKeySet={setApiKey} savedKey={apiKey} />
-
-              <div className="glass-panel p-6 mt-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">Social Integration</h2>
-                  <span className="text-[10px] bg-white/5 border border-white/5 px-2 py-0.5 rounded text-zinc-500 uppercase tracking-wider">Optional</span>
-                </div>
-                <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
-                  Automatically publish your clips to TikTok, Instagram Reels, and YouTube Shorts via <strong>Upload-Post</strong>.
-                  Includes a <strong>free tier</strong> (no credit card required).
-                  If you prefer, you can skip this and manually download/upload your videos.
-                </p>
-                <div className="space-y-4">
-                  <label className="block text-sm text-zinc-400">Upload-Post API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      value={uploadPostKey}
-                      onChange={(e) => setUploadPostKey(e.target.value)}
-                      className="input-field"
-                      placeholder="ey..."
-                    />
-                    <button onClick={fetchUserProfiles} className="btn-primary py-2 px-4 text-sm">
-                      Connect
-                    </button>
-                  </div>
-                  <p className="text-xs text-zinc-500 leading-relaxed">
-                    Connect your Upload-Post account to enable one-click publishing.
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <a href="https://app.upload-post.com/login" target="_blank" rel="noopener noreferrer" className="p-2 border border-white/5 rounded-lg hover:bg-white/5 transition-colors flex flex-col gap-1">
-                        <span className="text-zinc-400 font-medium">1. Login</span>
-                        <span className="text-[10px] text-zinc-600">Register account</span>
-                      </a>
-                      <a href="https://app.upload-post.com/manage-users" target="_blank" rel="noopener noreferrer" className="p-2 border border-white/5 rounded-lg hover:bg-white/5 transition-colors flex flex-col gap-1">
-                        <span className="text-zinc-400 font-medium">2. Profiles</span>
-                        <span className="text-[10px] text-zinc-600">Create & Connect</span>
-                      </a>
-                      <a href="https://app.upload-post.com/api-keys" target="_blank" rel="noopener noreferrer" className="p-2 border border-white/5 rounded-lg hover:bg-white/5 transition-colors flex flex-col gap-1">
-                        <span className="text-zinc-400 font-medium">3. API Key</span>
-                        <span className="text-[10px] text-zinc-600">Generate key</span>
-                      </a>
-                    </div>
-                    <br />
-                    <span className="text-zinc-600 italic">
-                      Keys are only stored in your browser. They are sent to the backend only to process your request, never stored server-side.
-                    </span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="glass-panel p-6 mt-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">Video Translation</h2>
-                  <span className="text-[10px] bg-white/5 border border-white/5 px-2 py-0.5 rounded text-zinc-500 uppercase tracking-wider">Optional</span>
-                </div>
-                <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
-                  Translate your clips to different languages using <strong>ElevenLabs</strong> AI dubbing.
-                  Automatically translates speech while preserving the original voice characteristics.
-                </p>
-                <div className="space-y-4">
-                  <label className="block text-sm text-zinc-400">ElevenLabs API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      value={elevenLabsKey}
-                      onChange={(e) => setElevenLabsKey(e.target.value)}
-                      className="input-field"
-                      placeholder="sk_..."
-                    />
-                    <button
-                      onClick={() => {
-                        if (elevenLabsKey) {
-                          localStorage.setItem('elevenLabsKey_v1', encrypt(elevenLabsKey));
-                          alert('ElevenLabs API Key saved!');
-                        }
-                      }}
-                      className="btn-primary py-2 px-4 text-sm"
-                    >
-                      Save
-                    </button>
-                  </div>
-                  <p className="text-xs text-zinc-500 leading-relaxed">
-                    Get your API key from ElevenLabs to enable video translation.
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <a href="https://elevenlabs.io/sign-up" target="_blank" rel="noopener noreferrer" className="p-2 border border-white/5 rounded-lg hover:bg-white/5 transition-colors flex flex-col gap-1">
-                        <span className="text-zinc-400 font-medium">1. Sign Up</span>
-                        <span className="text-[10px] text-zinc-600">Create account</span>
-                      </a>
-                      <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener noreferrer" className="p-2 border border-white/5 rounded-lg hover:bg-white/5 transition-colors flex flex-col gap-1">
-                        <span className="text-zinc-400 font-medium">2. API Key</span>
-                        <span className="text-[10px] text-zinc-600">Generate key</span>
-                      </a>
-                    </div>
-                    <br />
-                    <span className="text-zinc-600 italic">
-                      Keys are only stored in your browser. They are sent to the backend only to process your request, never stored server-side.
-                    </span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="glass-panel p-6 mt-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">AI Shorts (UGC Videos)</h2>
-                  <span className="text-[10px] bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded text-violet-400 uppercase tracking-wider">New</span>
-                </div>
-                <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
-                  Generate UGC-style videos with AI actors for any product or business using <strong>fal.ai</strong>.
-                  Just describe your product or paste a URL. Requires fal.ai + ElevenLabs API keys.
-                </p>
-                <div className="space-y-4">
-                  <label className="block text-sm text-zinc-400">fal.ai API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      value={falKey}
-                      onChange={(e) => setFalKey(e.target.value)}
-                      className="input-field"
-                      placeholder="fal_..."
-                    />
-                    <button
-                      onClick={() => {
-                        if (falKey) {
-                          localStorage.setItem('falKey_v1', encrypt(falKey));
-                          alert('fal.ai API Key saved!');
-                        }
-                      }}
-                      className="btn-primary py-2 px-4 text-sm"
-                    >
-                      Save
-                    </button>
-                  </div>
-                  <p className="text-xs text-zinc-500 leading-relaxed">
-                    Get your API key from fal.ai to enable AI actor video generation.
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener noreferrer" className="p-2 border border-white/5 rounded-lg hover:bg-white/5 transition-colors flex flex-col gap-1">
-                        <span className="text-zinc-400 font-medium">1. Sign Up</span>
-                        <span className="text-[10px] text-zinc-600">Create fal.ai account</span>
-                      </a>
-                      <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener noreferrer" className="p-2 border border-white/5 rounded-lg hover:bg-white/5 transition-colors flex flex-col gap-1">
-                        <span className="text-zinc-400 font-medium">2. API Key</span>
-                        <span className="text-[10px] text-zinc-600">Generate key</span>
-                      </a>
-                    </div>
-                    <br />
-                    <span className="text-zinc-600 italic">
-                      Keys are only stored in your browser. Sent to backend only to process requests.
-                    </span>
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* View: SaaS Shorts */}
-          {activeTab === 'saasshorts' && (
-            <SaaShortsTab geminiApiKey={apiKey} elevenLabsKey={elevenLabsKey} falKey={falKey} uploadPostKey={uploadPostKey} uploadUserId={uploadUserId} />
-          )}
-
-          {/* View: UGC Gallery */}
-          {activeTab === 'ugc-gallery' && (
-            <UGCGallery />
-          )}
-
-          {/* View: Thumbnails */}
-          {activeTab === 'thumbnails' && (
-            <ThumbnailStudio geminiApiKey={apiKey} uploadPostKey={uploadPostKey} uploadUserId={uploadUserId} />
-          )}
-
-          {/* View: Gallery */}
-          {/* {activeTab === 'gallery' && (
-            <Gallery />
-          )} */}
-
-          {/* View: Dashboard (Idle) */}
-          {activeTab === 'dashboard' && status === 'idle' && (
-            <div className="h-full flex flex-col items-center justify-center p-6 animate-[fadeIn_0.3s_ease-out]">
-              <div className="max-w-xl w-full text-center space-y-8">
-                <div className="space-y-4">
-                  <h1 className="text-4xl md:text-5xl font-black bg-gradient-to-b from-white to-white/60 bg-clip-text text-transparent">
-                    Create Viral Shorts
-                  </h1>
-                  <p className="text-zinc-400 text-lg">
-                    Drop your long-form video URL or file below to instantly generate viral clips with AI.
-                  </p>
-                </div>
-
-                <MediaInput onProcess={handleProcess} isProcessing={status === 'processing'} />
-
-                <div className="flex items-center justify-center gap-8 text-zinc-500 text-sm">
-                  <span className="flex items-center gap-2"><Youtube size={16} /> YouTube</span>
-                  <span className="flex items-center gap-2"><Instagram size={16} /> Instagram</span>
-                  <span className="flex items-center gap-2"><TikTokIcon size={16} /> TikTok</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* View: Processing / Results (Split View) */}
-          {activeTab === 'dashboard' && (status === 'processing' || status === 'complete' || status === 'error') && (
-            <div className="h-full flex flex-col md:flex-row animate-[fadeIn_0.3s_ease-out]">
-
-              {/* Left Panel: Preview & Status */}
-              <div className={`${status === 'complete' ? 'w-full md:w-[30%] lg:w-[25%]' : 'w-full md:w-[55%] lg:w-[60%]'} h-full flex flex-col border-r border-white/5 bg-black/20 p-6 overflow-y-auto custom-scrollbar transition-all duration-700 ease-in-out`}>
-                <div className="mb-6 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold flex items-center gap-2">
-                    <Activity className={`text-primary ${status === 'processing' ? 'animate-pulse' : ''}`} size={20} />
-                    Live Analysis
-                  </h2>
-                  <span className={`text-xs px-2 py-1 rounded-full border ${status === 'processing' ? 'bg-primary/10 border-primary/20 text-primary' :
-                    status === 'complete' ? 'bg-green-500/10 border-green-500/20 text-green-400' :
-                      'bg-red-500/10 border-red-500/20 text-red-400'
-                    }`}>
-                    {status.toUpperCase()}
-                  </span>
-                </div>
-
-                {/* Video Preview */}
-                {processingMedia && (
-                  <ProcessingAnimation
-                    media={processingMedia}
-                    isComplete={status === 'complete'}
-                    syncedTime={syncedTime}
-                    isSyncedPlaying={isSyncedPlaying}
-                    syncTrigger={syncTrigger}
-                  />
-                )}
-
-                {/* Logs Terminal */}
-                <div className={`bg-[#0c0c0e] rounded-xl border border-white/10 overflow-hidden flex flex-col transition-all duration-500 ${status === 'complete' ? 'h-32 min-h-0 opacity-50 hover:opacity-100' : 'flex-1 min-h-[200px]'}`}>
-                  <div className="px-4 py-2 border-b border-white/5 flex items-center justify-between bg-white/5 shrink-0">
-                    <span className="text-xs font-mono text-zinc-400 flex items-center gap-2">
-                      <Terminal size={12} /> System Logs
-                    </span>
-                    <button onClick={() => setLogsVisible(!logsVisible)} className="text-zinc-500 hover:text-white transition-colors">
-                      {logsVisible ? <ChevronDown size={14} /> : <ChevronDown size={14} className="rotate-180" />}
-                    </button>
-                  </div>
-                  {logsVisible && (
-                    <div className="flex-1 p-4 overflow-y-auto font-mono text-xs space-y-1.5 custom-scrollbar text-zinc-400">
-                      {logs.map((log, i) => (
-                        <div key={i} className={`flex gap-2 ${log.toLowerCase().includes('error') ? 'text-red-400' : 'text-zinc-400'}`}>
-                          <span className="text-zinc-700 shrink-0">{new Date().toLocaleTimeString()}</span>
-                          <span>{log}</span>
-                        </div>
-                      ))}
-                      {status === 'processing' && (
-                        <div className="animate-pulse text-primary/70">_</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Panel: Results Grid */}
-              <div className={`${status === 'complete' ? 'w-full md:w-[70%] lg:w-[75%]' : 'w-full md:w-[45%] lg:w-[40%]'} h-full flex flex-col bg-background p-6 transition-all duration-700 ease-in-out`}>
-                <h2 className="text-lg font-semibold mb-6 flex items-center gap-2 shrink-0">
-                  <Sparkles className="text-yellow-400" size={20} />
-                  Generated Shorts
-                  {results?.clips?.length > 0 && (
-                    <span className="text-xs bg-white/10 text-white px-2 py-0.5 rounded-full ml-auto">
-                      {results.clips.length} Clips
-                    </span>
-                  )}
-                  {results?.cost_analysis && (
-                    <span className="text-xs bg-green-500/10 border border-green-500/20 text-green-400 px-2 py-0.5 rounded-full ml-2" title={`Input: ${results.cost_analysis.input_tokens} | Output: ${results.cost_analysis.output_tokens}`}>
-                      ${results.cost_analysis.total_cost.toFixed(5)}
-                    </span>
-                  )}
-                  {results?.clips?.length > 1 && status === 'complete' && (
-                    <button
-                      onClick={() => setShowScheduleWeek(true)}
-                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-500/20 to-indigo-500/20 hover:from-purple-500/30 hover:to-indigo-500/30 border border-purple-500/30 text-purple-300 hover:text-purple-200 rounded-full text-xs font-bold transition-all"
-                    >
-                      <Calendar size={14} />
-                      Programar Semana
-                    </button>
-                  )}
+        {activeTab === 'dashboard' && status !== 'idle' && (
+          <div className="flex h-full min-h-0 flex-col md:flex-row">
+            <section className="flex min-h-0 w-full flex-col border-r border-white/5 bg-[#0c0c0e] md:w-1/3">
+              <div className="flex items-center justify-between border-b border-white/5 p-4">
+                <h2 className="flex items-center gap-2 text-lg font-semibold text-white">
+                  <Activity className={`text-primary ${status === 'processing' ? 'animate-pulse' : ''}`} size={20} />
+                  Live Analysis
                 </h2>
-
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-1">
-                  {results && results.clips && results.clips.length > 0 ? (
-                    <div className={`grid gap-4 pb-10 ${status === 'complete' ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1'}`}>
-                      {results.clips.map((clip, i) => (
-                        <ResultCard
-                          key={i}
-                          clip={clip}
-                          index={i}
-                          jobId={jobId}
-                          uploadPostKey={uploadPostKey}
-                          uploadUserId={uploadUserId}
-                          geminiApiKey={apiKey}
-                          elevenLabsKey={elevenLabsKey}
-                          onPlay={(time) => handleClipPlay(time)}
-                          onPause={handleClipPause}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    status === 'processing' ? (
-                      <div className="h-full flex flex-col items-center justify-center text-zinc-500 space-y-4 opacity-50">
-                        <div className="w-12 h-12 rounded-full border-2 border-zinc-800 border-t-primary animate-spin" />
-                        <p className="text-sm">Waiting for clips...</p>
-                      </div>
-                    ) : status === 'error' ? (
-                      <div className="h-full flex flex-col items-center justify-center text-red-400 space-y-2">
-                        <p>Generation failed.</p>
-                      </div>
-                    ) : null
-                  )}
-                </div>
+                <span className={`rounded-full border px-2 py-1 text-xs ${status === 'processing' ? 'border-primary/20 bg-primary/10 text-primary' : status === 'complete' ? 'border-green-500/20 bg-green-500/10 text-green-400' : 'border-red-500/20 bg-red-500/10 text-red-400'}`}>
+                  {status}
+                </span>
               </div>
 
-            </div>
-          )}
+              {processingMedia && (
+                <ProcessingAnimation
+                  media={processingMedia}
+                  isComplete={status === 'complete'}
+                  syncedTime={syncedTime}
+                  isPlaying={isSyncedPlaying}
+                  syncTrigger={syncTrigger}
+                />
+              )}
 
-        </div>
+              <div className="min-h-0 flex-1 overflow-hidden border-t border-white/5">
+                <button
+                  onClick={() => setLogsVisible(!logsVisible)}
+                  className="flex w-full items-center justify-between border-b border-white/5 p-3 text-xs font-medium uppercase tracking-wider text-zinc-500 hover:bg-white/5"
+                >
+                  <span className="flex items-center gap-2"><Terminal size={14} /> logs</span>
+                  <span>{logsVisible ? 'hide' : 'show'}</span>
+                </button>
+                {logsVisible && (
+                  <div className="h-full overflow-y-auto bg-black/20 p-4 font-mono text-xs text-zinc-400">
+                    {logs.map((log, i) => <div key={i} className="mb-1">{log}</div>)}
+                    {status === 'processing' && <div className="animate-pulse text-primary/70">_</div>}
+                  </div>
+                )}
+              </div>
+            </section>
 
-        {/* Footer */}
-        <div className="h-8 border-t border-white/5 flex items-center justify-center shrink-0">
-          <span className="text-[10px] text-zinc-600">Made with ❤️ by <a href="https://www.upload-post.com" target="_blank" rel="noopener noreferrer" className="text-zinc-500 hover:text-white transition-colors">Upload-Post</a></span>
-        </div>
-      </main>
+            <section className="min-h-0 flex-1 overflow-y-auto p-6">
+              {results?.clips?.length ? (
+                <div className="space-y-6">
+                  {results.cost_analysis && (
+                    <div className="rounded-xl border border-white/5 bg-white/[0.03] p-4 text-xs text-zinc-400">
+                      Provider: <span className="text-white">{results.cost_analysis.provider || results.cost_analysis.model}</span>
+                      {results.cost_analysis.model && <span> / {results.cost_analysis.model}</span>}
+                    </div>
+                  )}
+                  {results.clips.map((clip, i) => (
+                    <ResultCard
+                      key={i}
+                      clip={clip}
+                      index={i}
+                      jobId={jobId}
+                      uploadPostKey={uploadPostKey}
+                      uploadUserId={uploadUserId}
+                      aiConfig={aiConfig}
+                      onPlay={handleClipPlay}
+                      onPause={() => setIsSyncedPlaying(false)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center space-y-4 text-zinc-500">
+                  <div className="h-12 w-12 animate-spin rounded-full border-2 border-zinc-800 border-t-primary" />
+                  <p>{status === 'processing' ? 'Finding clips...' : 'No clips generated yet.'}</p>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
 
-      {/* Missing API Key Modal */}
-      {showKeyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowKeyModal(false)}>
-          <div className="bg-[#18181b] border border-white/10 rounded-2xl p-6 max-w-md w-full mx-4 space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-white">Gemini API Key Required</h2>
-            <p className="text-sm text-zinc-400">
-              You need a Google Gemini API key to use the Clip Generator. It's free and takes 30 seconds to get.
-            </p>
-            <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-2">
-              <p className="text-xs font-semibold text-zinc-300">How to get your free key:</p>
-              <ol className="text-xs text-zinc-400 space-y-1 list-decimal list-inside">
-                <li>Go to <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">aistudio.google.com/app/apikey</a></li>
-                <li>Sign in with your Google account</li>
-                <li>Click "Create API Key"</li>
-                <li>Copy the key and paste it below</li>
-              </ol>
-            </div>
-            <input
-              type="text"
-              placeholder="Paste your Gemini API key here..."
-              className="w-full bg-black/50 border border-white/20 rounded-lg px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && e.target.value.trim()) {
-                  setApiKey(e.target.value.trim());
-                  setShowKeyModal(false);
-                }
-              }}
-            />
+        {sessionRecovered && (
+          <div className="fixed bottom-4 right-4 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary shadow-xl">
+            Session restored
+          </div>
+        )}
 
-            {/* Upload-Post info */}
-            <div className="bg-violet-500/5 border border-violet-500/20 rounded-lg p-4 space-y-2">
-              <p className="text-xs font-semibold text-violet-300">Optional: Auto-publish to social media</p>
-              <p className="text-xs text-zinc-400">
-                With an <strong className="text-zinc-300">Upload-Post</strong> API key you can publish your clips directly to TikTok, Instagram Reels, and YouTube Shorts — or schedule them for later. Free tier available, no credit card needed.
-              </p>
-              <ol className="text-xs text-zinc-400 space-y-1 list-decimal list-inside">
-                <li>Register at <a href="https://app.upload-post.com/login" target="_blank" rel="noopener noreferrer" className="text-violet-400 underline">app.upload-post.com</a></li>
-                <li>Connect your TikTok, Instagram, or YouTube accounts</li>
-                <li>Go to API Keys and generate one</li>
-                <li>Paste it in Settings — done!</li>
-              </ol>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowKeyModal(false)}
-                className="flex-1 text-sm text-zinc-400 py-2 rounded-lg border border-white/10 hover:bg-white/5 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => { setShowKeyModal(false); setActiveTab('settings'); }}
-                className="flex-1 text-sm text-white py-2 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors font-medium"
-              >
-                Go to Settings
+        {showKeyModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setShowKeyModal(false)}>
+            <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#18181b] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <h2 className="mb-2 text-lg font-bold text-white">AI provider key required</h2>
+              <p className="mb-4 text-sm text-zinc-400">Set provider and API key in Settings before processing a video.</p>
+              <button onClick={() => { setActiveTab('settings'); setShowKeyModal(false); }} className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-blue-600">
+                Open settings
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      <ScheduleWeekModal
-        isOpen={showScheduleWeek}
-        onClose={() => setShowScheduleWeek(false)}
-        clips={results?.clips || []}
-        jobId={jobId}
-        uploadPostKey={uploadPostKey}
-        uploadUserId={uploadUserId}
-      />
+        )}
+      </main>
     </div>
   );
 }
-
-export default App;
