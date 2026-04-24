@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Scan, Scissors, Activity, Radio, CheckCircle, Play } from 'lucide-react';
 
-const ProcessingAnimation = ({ media, isComplete, syncedTime, isSyncedPlaying, syncTrigger }) => {
+const ProcessingAnimation = ({ media, isComplete, providerLabel, modelLabel, syncedTime, isSyncedPlaying, syncTrigger }) => {
   const [videoSrc, setVideoSrc] = useState(null);
   const [isYouTube, setIsYouTube] = useState(false);
   const videoRef = useRef(null);
@@ -196,7 +196,7 @@ const ProcessingAnimation = ({ media, isComplete, syncedTime, isSyncedPlaying, s
       
       {!isSyncedPlaying && !isComplete && (
           <div className="absolute top-4 right-4 z-30 flex items-center gap-2 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-lg border border-white/10 text-white/50 text-[10px] font-mono">
-            AI_MODEL: GEMINI-2.5-PRO
+            {providerLabel}: {modelLabel}
           </div>
       )}
       

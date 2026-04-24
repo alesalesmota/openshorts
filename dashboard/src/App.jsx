@@ -98,7 +98,18 @@ const compactDate = (value) => {
 
 const pollJob = async (jobId) => {
   const res = await fetch(getApiUrl(`/api/status/${jobId}`));
-  if (!res.ok) throw new Error('Status check failed');
+  if (!res.ok) {
+    let message = 'Status check failed';
+    try {
+      const body = await res.json();
+      message = body.detail || message;
+    } catch {
+      message = await res.text();
+    }
+    const error = new Error(message);
+    error.status = res.status;
+    throw error;
+  }
   return res.json();
 };
 
@@ -221,6 +232,7 @@ export default function App() {
       if (session.jobId && session.status && session.status !== 'idle') {
         setJobId(session.jobId);
         setResults(session.results || null);
+        setLogs(session.logs || []);
         if (session.processingMedia) setProcessingMedia(session.processingMedia);
         setStatus(session.status === 'processing' ? 'processing' : session.status);
         setSessionRecovered(true);
@@ -232,7 +244,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (status === 'idle') {
+    if (status === 'idle' || !jobId) {
       localStorage.removeItem(SESSION_KEY);
       return;
     }
@@ -240,10 +252,11 @@ export default function App() {
       jobId,
       status,
       results,
+      logs: logs.slice(-200),
       processingMedia: processingMedia?.type === 'url' ? processingMedia : null,
       timestamp: Date.now(),
     }));
-  }, [jobId, status, results, processingMedia]);
+  }, [jobId, status, results, processingMedia, logs]);
 
   useEffect(() => {
     localStorage.setItem('ai_provider', aiConfig.provider);
@@ -357,6 +370,16 @@ export default function App() {
           }
         } catch (e) {
           console.error('Polling error', e);
+          if (e.status === 404) {
+            setStatus('error');
+            setJobId(null);
+            setLogs((prev) => [
+              ...prev,
+              'Job not found on backend. The backend was likely restarted, so this saved browser session is stale. Click New job and run it again.',
+            ]);
+            localStorage.removeItem(SESSION_KEY);
+            clearInterval(interval);
+          }
         }
       }, 2000);
     }
@@ -407,6 +430,7 @@ export default function App() {
       if (!res.ok) throw new Error(await res.text());
       const resData = await res.json();
       setJobId(resData.job_id);
+      setLogs((prev) => [...prev, `Backend accepted job ${resData.job_id}. Waiting for worker logs...`]);
     } catch (e) {
       setStatus('error');
       setLogs((prev) => [...prev, `Error starting job: ${e.message}`]);
@@ -788,6 +812,8 @@ export default function App() {
                 <ProcessingAnimation
                   media={processingMedia}
                   isComplete={status === 'complete'}
+                  providerLabel={providerLabel}
+                  modelLabel={aiConfig.model || aiConfig.azureDeployment || 'selected model'}
                   syncedTime={syncedTime}
                   isPlaying={isSyncedPlaying}
                   syncTrigger={syncTrigger}
@@ -804,7 +830,11 @@ export default function App() {
                 </button>
                 {logsVisible && (
                   <div className="h-full overflow-y-auto bg-black/20 p-4 font-mono text-xs text-zinc-400">
-                    {logs.map((log, i) => <div key={i} className="mb-1">{log}</div>)}
+                    {logs.length ? (
+                      logs.map((log, i) => <div key={i} className="mb-1">{log}</div>)
+                    ) : (
+                      <div className="text-zinc-600">Waiting for backend status...</div>
+                    )}
                     {status === 'processing' && <div className="animate-pulse text-primary/70">_</div>}
                   </div>
                 )}
@@ -833,6 +863,14 @@ export default function App() {
                       onPause={() => setIsSyncedPlaying(false)}
                     />
                   ))}
+                </div>
+              ) : status === 'error' ? (
+                <div className="flex h-full flex-col items-center justify-center space-y-4 text-center text-zinc-500">
+                  <Terminal size={32} className="text-red-400" />
+                  <div>
+                    <p className="font-medium text-zinc-300">Job stopped</p>
+                    <p className="mt-1 max-w-sm text-sm">Check the logs on the left, then start a new job.</p>
+                  </div>
                 </div>
               ) : (
                 <div className="flex h-full flex-col items-center justify-center space-y-4 text-zinc-500">
