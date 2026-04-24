@@ -484,7 +484,8 @@ export default function App() {
   );
 
   const SettingsView = () => (
-    <div className="mx-auto max-w-4xl space-y-8 p-8">
+    <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-8">
+      <div className="mx-auto w-full max-w-4xl space-y-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Settings</h1>
@@ -720,6 +721,7 @@ export default function App() {
           </div>
         </div>
       </section>
+      </div>
     </div>
   );
 
