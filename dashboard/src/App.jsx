@@ -61,8 +61,8 @@ const decrypt = (text) => {
 const buildAiHeaders = (aiConfig) => {
   const headers = {
     'X-AI-Provider': aiConfig.provider,
-    'X-AI-API-Key': aiConfig.apiKey,
   };
+  if (aiConfig.apiKey) headers['X-AI-API-Key'] = aiConfig.apiKey;
   if (aiConfig.model) headers['X-AI-Model'] = aiConfig.model;
   if (aiConfig.baseUrl) headers['X-AI-Base-URL'] = aiConfig.baseUrl;
   if (aiConfig.azureEndpoint) headers['X-Azure-OpenAI-Endpoint'] = aiConfig.azureEndpoint;
@@ -150,6 +150,7 @@ export default function App() {
   const [uploadPostKey, setUploadPostKey] = useState(() => decrypt(localStorage.getItem('uploadPostKey_v3')) || '');
   const [uploadUserId, setUploadUserId] = useState(() => localStorage.getItem('uploadUserId') || '');
   const [userProfiles, setUserProfiles] = useState([]);
+  const [backendAiDefaults, setBackendAiDefaults] = useState(null);
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [jobId, setJobId] = useState(null);
   const [status, setStatus] = useState('idle');
@@ -166,6 +167,7 @@ export default function App() {
     () => providerOptions.find((p) => p.value === aiConfig.provider)?.label || aiConfig.provider,
     [aiConfig.provider]
   );
+  const hasAiCredential = Boolean(aiConfig.apiKey || backendAiDefaults?.has_api_key);
 
   useEffect(() => {
     try {
@@ -226,6 +228,26 @@ export default function App() {
   }, [uploadPostKey]);
 
   useEffect(() => {
+    fetch(getApiUrl('/api/ai/defaults'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setBackendAiDefaults(data);
+        if (!data.has_api_key || aiConfig.apiKey) return;
+        setAiConfig((prev) => ({
+          ...prev,
+          provider: data.provider || prev.provider,
+          model: data.model || data.azureDeployment || prev.model,
+          baseUrl: data.baseUrl || prev.baseUrl,
+          azureEndpoint: data.azureEndpoint || prev.azureEndpoint,
+          azureDeployment: data.azureDeployment || prev.azureDeployment,
+          azureApiVersion: data.azureApiVersion || prev.azureApiVersion || '2024-10-21',
+        }));
+      })
+      .catch(() => {});
+  }, [aiConfig.apiKey]);
+
+  useEffect(() => {
     let interval;
     if ((status === 'processing' || status === 'completed') && jobId) {
       interval = setInterval(async () => {
@@ -268,7 +290,7 @@ export default function App() {
   };
 
   const handleProcess = async (data) => {
-    if (!aiConfig.apiKey) {
+    if (!hasAiCredential) {
       setShowKeyModal(true);
       return;
     }
@@ -368,7 +390,7 @@ export default function App() {
           <p className="mt-1 text-sm text-zinc-500">Configure AI analysis and social publishing.</p>
         </div>
         <div className="flex items-center gap-2 rounded-full border border-green-500/20 bg-green-500/10 px-3 py-1 text-[10px] font-medium text-green-400">
-          <Shield size={12} /> Keys stay in this browser
+          <Shield size={12} /> {backendAiDefaults?.has_api_key ? 'Backend key loaded' : 'Keys stay in this browser'}
         </div>
       </div>
 
@@ -417,8 +439,11 @@ export default function App() {
               value={aiConfig.apiKey}
               onChange={(e) => setAiConfig((prev) => ({ ...prev, apiKey: e.target.value }))}
               className="input-field font-mono"
-              placeholder="Provider API key"
+              placeholder={backendAiDefaults?.has_api_key ? 'Using backend key for this session' : 'Provider API key'}
             />
+            {backendAiDefaults?.has_api_key && !aiConfig.apiKey && (
+              <span className="block text-xs text-green-400">Using backend key; raw key is not stored in browser.</span>
+            )}
           </label>
 
           {['openai', 'openrouter', 'nvidia-nim', 'custom-openai-compatible'].includes(aiConfig.provider) && (
@@ -633,7 +658,7 @@ export default function App() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setShowKeyModal(false)}>
             <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#18181b] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <h2 className="mb-2 text-lg font-bold text-white">AI provider key required</h2>
-              <p className="mb-4 text-sm text-zinc-400">Set provider and API key in Settings before processing a video.</p>
+              <p className="mb-4 text-sm text-zinc-400">Set provider and API key in Settings or configure backend AI defaults before processing a video.</p>
               <button onClick={() => { setActiveTab('settings'); setShowKeyModal(false); }} className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-blue-600">
                 Open settings
               </button>

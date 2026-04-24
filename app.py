@@ -200,6 +200,21 @@ app.add_middleware(
 # Mount static files for serving videos
 app.mount("/videos", StaticFiles(directory=OUTPUT_DIR), name="videos")
 
+@app.get("/api/ai/defaults")
+async def ai_defaults():
+    """Return non-secret AI provider defaults configured on the backend."""
+    provider = (os.environ.get("AI_PROVIDER") or ("gemini" if os.environ.get("GEMINI_API_KEY") else "")).strip()
+    api_key = (os.environ.get("AI_API_KEY") or os.environ.get("GEMINI_API_KEY") or "").strip()
+    return {
+        "provider": provider,
+        "model": (os.environ.get("AI_MODEL") or "").strip(),
+        "baseUrl": (os.environ.get("AI_BASE_URL") or "").strip(),
+        "azureEndpoint": (os.environ.get("AZURE_OPENAI_ENDPOINT") or "").strip(),
+        "azureDeployment": (os.environ.get("AZURE_OPENAI_DEPLOYMENT") or "").strip(),
+        "azureApiVersion": (os.environ.get("AZURE_OPENAI_API_VERSION") or "2024-10-21").strip(),
+        "has_api_key": bool(api_key),
+    }
+
 class ProcessRequest(BaseModel):
     url: str
 

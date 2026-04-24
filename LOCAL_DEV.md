@@ -57,6 +57,8 @@ The dashboard sends provider settings per request. Backend env vars are fallback
 
 Legacy `X-Gemini-Key` and `GEMINI_API_KEY` still work for Gemini.
 
+If backend env vars include `AI_API_KEY`, the dashboard can use that server-side key without storing the raw key in browser localStorage. The non-secret defaults are exposed at `/api/ai/defaults`.
+
 ## Publishing
 
 Upload-Post remains optional and downstream. Configure it in dashboard settings only when publishing clips.

@@ -88,6 +88,14 @@
   - region: `eastus2`
   - endpoint: `https://blue-008-36-2109-resource.cognitiveservices.azure.com/`
   - sku: `S0`
-- No Azure OpenAI model deployments exist in that resource yet.
+- Azure OpenAI deployment created for local OpenShorts testing:
+  - deployment: `openshorts-gpt-4-1-mini`
+  - model: `gpt-4.1-mini`
+  - model version: `2025-04-14`
+  - sku: `Standard`
+  - capacity: `1`
+- Backend now supports non-secret AI defaults at `/api/ai/defaults`, allowing local sessions to use a server-side API key without storing the raw key in browser localStorage.
+- Current local backend session was started with Azure OpenAI env vars and `has_api_key=true`; temp key file was deleted after process start.
+- A minimal Azure chat completions ping returned `{"ok":true}`.
 - Candidate models available in that resource include `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-5.4-mini`, and newer listed models as of the local CLI check on 2026-04-24.
 - Do not store Azure API keys in repo files. Retrieve keys via CLI only when configuring local runtime, Key Vault, or explicit user-approved deployment flow.
