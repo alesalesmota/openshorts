@@ -33,10 +33,19 @@ const buildAiHeaders = (aiConfig) => {
   return headers;
 };
 
+const filenameFromUrl = (url) => {
+  try {
+    return decodeURIComponent(new URL(url, window.location.origin).pathname.split('/').pop());
+  } catch {
+    return url.split('/').pop();
+  }
+};
+
 export default function ResultCard({ clip, index, jobId, uploadPostKey, uploadUserId, aiConfig, onPlay, onPause }) {
   const videoRef = React.useRef(null);
   const originalVideoUrl = getApiUrl(clip.video_url);
   const [currentVideoUrl, setCurrentVideoUrl] = useState(originalVideoUrl);
+  const [serverFilename, setServerFilename] = useState(() => filenameFromUrl(originalVideoUrl));
   const [clipDuration, setClipDuration] = useState(clip.end && clip.start ? clip.end - clip.start : 30);
   const [activeLayers, setActiveLayers] = useState({ subtitles: null, hook: null, effects: null });
   const [showPostModal, setShowPostModal] = useState(false);
@@ -91,11 +100,8 @@ export default function ResultCard({ clip, index, jobId, uploadPostKey, uploadUs
   }, [jobId, index]);
 
   const currentFilename = () => {
-    try {
-      return decodeURIComponent(new URL(currentVideoUrl, window.location.origin).pathname.split('/').pop());
-    } catch {
-      return currentVideoUrl.split('/').pop();
-    }
+    if (currentVideoUrl.startsWith('blob:')) return serverFilename;
+    return filenameFromUrl(currentVideoUrl) || serverFilename;
   };
 
   const handleAutoEdit = async () => {
@@ -157,7 +163,9 @@ export default function ResultCard({ clip, index, jobId, uploadPostKey, uploadUs
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      setCurrentVideoUrl(getApiUrl(data.new_video_url));
+      const nextUrl = getApiUrl(data.new_video_url);
+      setCurrentVideoUrl(nextUrl);
+      setServerFilename(filenameFromUrl(nextUrl));
       setShowSubtitleModal(false);
     } catch (e) {
       setEditError(e.message || 'Subtitle generation failed');
@@ -193,7 +201,9 @@ export default function ResultCard({ clip, index, jobId, uploadPostKey, uploadUs
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      setCurrentVideoUrl(getApiUrl(data.new_video_url));
+      const nextUrl = getApiUrl(data.new_video_url);
+      setCurrentVideoUrl(nextUrl);
+      setServerFilename(filenameFromUrl(nextUrl));
       setShowHookModal(false);
     } catch (e) {
       setEditError(e.message || 'Hook generation failed');

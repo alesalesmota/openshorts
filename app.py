@@ -32,7 +32,7 @@ JOB_RETENTION_SECONDS = 3600  # 1 hour retention
 # Application State
 job_queue = asyncio.Queue()
 jobs: Dict[str, Dict] = {}
-# Semester to limit concurrency to MAX_CONCURRENT_JOBS
+# Semaphore to limit concurrency to MAX_CONCURRENT_JOBS
 concurrency_semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
 
 AI_HEADER_MAP = {
@@ -45,7 +45,7 @@ AI_HEADER_MAP = {
     "AZURE_OPENAI_API_VERSION": "X-Azure-OpenAI-API-Version",
 }
 
-def build_ai_env(request: Request) -> Dict[str, str]:
+def build_ai_env(request: Request, require_key: bool = True) -> Dict[str, str]:
     ai_env: Dict[str, str] = {}
     legacy_gemini_key = request.headers.get("X-Gemini-Key")
 
@@ -68,7 +68,7 @@ def build_ai_env(request: Request) -> Dict[str, str]:
         ai_env["AI_API_KEY"] = os.environ["GEMINI_API_KEY"]
         ai_env["GEMINI_API_KEY"] = os.environ["GEMINI_API_KEY"]
 
-    if not ai_env.get("AI_API_KEY"):
+    if require_key and not ai_env.get("AI_API_KEY"):
         raise HTTPException(status_code=400, detail="Missing AI API key. Send X-AI-API-Key or legacy X-Gemini-Key.")
 
     return ai_env
@@ -410,11 +410,18 @@ async def edit_clip(
     x_gemini_key: Optional[str] = Header(None, alias="X-Gemini-Key")
 ):
     # Determine API Key
-    ai_env = build_ai_env(request)
+    ai_env = build_ai_env(request, require_key=False)
+    if req.api_key and not ai_env.get("AI_API_KEY"):
+        ai_env["AI_PROVIDER"] = "gemini"
+        ai_env["AI_API_KEY"] = req.api_key
+        ai_env["GEMINI_API_KEY"] = req.api_key
     final_api_key = req.api_key or x_gemini_key or ai_env.get("GEMINI_API_KEY") or ai_env.get("AI_API_KEY")
     
     if (ai_env.get("AI_PROVIDER") or "gemini").lower() != "gemini":
         raise HTTPException(status_code=400, detail="Auto Edit currently requires Gemini because it uses Gemini video upload.")
+
+    if not final_api_key:
+        raise HTTPException(status_code=400, detail="Missing Gemini API key for Auto Edit.")
 
     if req.job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")

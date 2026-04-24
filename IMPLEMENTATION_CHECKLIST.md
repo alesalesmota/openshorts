@@ -1,0 +1,24 @@
+# OpenShorts Focused Clip Platform Checklist
+
+- [x] Remove non-core product UI and backend routes.
+- [x] Keep core clip generation, review/editing, download, and Upload-Post publishing.
+- [x] Add provider-agnostic AI headers and Gemini legacy compatibility.
+- [x] Move clip prompt, provider calls, JSON parsing, and validation into `ai_providers.py`.
+- [x] Add Gemini native adapter.
+- [x] Add OpenAI-compatible adapter for OpenAI, OpenRouter, NVIDIA NIM, and custom endpoints.
+- [x] Add Azure OpenAI deployment adapter.
+- [x] Add mocked provider tests.
+- [x] Add backend header compatibility tests for `X-Gemini-Key` and new AI headers.
+- [x] Add native Windows local run scripts.
+- [x] Set local backend render default to `http://localhost:3100`.
+- [x] Keep Docker optional and point Docker backend at renderer service.
+- [x] Add Azure notes and quota/resource-group helper scripts.
+- [x] Pass Python compile checks.
+- [x] Pass Python unit tests.
+- [x] Pass dashboard production build.
+- [x] Pass render-service TypeScript build.
+- [x] Launch local backend and dashboard without Docker.
+- [ ] Run one real end-to-end local video job with a user-provided provider key.
+- [ ] Verify Upload-Post profile fetch and controlled upload with a user-provided key.
+- [ ] Check Azure quota before any VM creation.
+- [ ] Create Azure resources only after explicit cost-aware approval.

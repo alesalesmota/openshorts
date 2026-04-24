@@ -4,6 +4,8 @@ services:
     container_name: openshorts-backend
     ports:
       - "8000:8000"
+    environment:
+      - RENDER_SERVICE_URL=http://renderer:3100
     volumes:
       - .:/app
       - /app/__pycache__
@@ -15,6 +17,9 @@ services:
     container_name: openshorts-frontend
     ports:
       - "5175:5173"
+    environment:
+      - VITE_PROXY_BACKEND=http://backend:8000
+      - VITE_PROXY_RENDERER=http://renderer:3100
     volumes:
       - ./dashboard:/app
       - /app/node_modules

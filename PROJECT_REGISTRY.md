@@ -13,30 +13,40 @@
 - Dashboard dependencies installed with `npm ci`; production build passes.
 - Render service dependencies installed with `npm ci`; TypeScript build passes.
 - Python syntax compile check passes for main backend modules.
-- Docker is not currently available on this computer PATH, so the documented full-stack launch command `docker compose up --build` cannot run yet.
+- Python unit tests pass with provider adapter mocks and header compatibility tests.
+- Runtime imports for OpenShorts dependencies pass on system Python after installing missing user-level packages.
+- Dashboard dev server is running on `http://localhost:5175`.
+- Backend dev server is running on `http://localhost:8000`.
+- Renderer is not running by default; start `scripts\start-renderer.ps1` only for Remotion render workflows.
+- `pip check` still reports unrelated global Python conflicts from other installed projects (`tts`, `pyannote`, `montreal-forced-aligner`, `trainer`). OpenShorts runtime imports currently pass.
+- Docker is optional for this fork and is not required for the lightweight local path.
 
 ## Runtime Notes
 
-- README expects Docker and Docker Compose for normal use.
-- Main dashboard URL after Docker launch: `http://localhost:5175`.
-- AI/video workflows require external API keys such as Gemini, fal.ai, ElevenLabs, and optionally Upload-Post/AWS S3 depending on feature.
+- Primary lightweight run path is native Windows, no Docker required.
+- Dashboard URL: `http://localhost:5175`.
+- Backend API URL: `http://localhost:8000`.
+- Renderer URL: `http://localhost:3100`, only needed for Remotion/browser render workflows.
+- Clip analysis requires one AI provider key. Supported providers are Gemini, OpenAI, Azure OpenAI, OpenRouter, NVIDIA NIM, and custom OpenAI-compatible endpoints.
+- Upload-Post is optional and separate from AI provider config.
 
 ## Product Direction Notes
 
-- Current intended direction is to narrow the app toward long-form video cutting and editing workflows.
+- Current intended direction is long-form video cutting and editing workflows only.
 - Priority feature area: Clip Generator / long video to short clips.
-- AI Shorts with generated actors is not the current focus.
-- ElevenLabs and fal.ai should not be treated as required for the focused Clip Generator workflow.
+- AI Shorts with generated actors was removed from this focused fork.
+- ElevenLabs, fal.ai, thumbnail studio, and S3-first gallery surfaces were removed from this focused fork.
 - Upload-Post remains in scope for publishing finished clips to TikTok, Instagram Reels, and YouTube Shorts.
-- AWS S3 should remain optional; local-first output is preferred for lightweight use.
+- Azure Blob may be added later as optional cloud storage for heavy processing, but local-first output remains preferred for lightweight use.
 
 ## Architecture Observations
 
-- The current Clip Generator depends directly on Gemini in `main.py` for viral moment selection and clip metadata.
-- The frontend currently labels and requires a Gemini API key for Clip Generator.
-- Future model work should add an API/provider abstraction before adding more models, so Gemini is one provider instead of the app contract.
-- The first multi-provider target should be transcript-to-clips analysis, because that is the core long-video cutting decision point.
+- Clip Generator now uses `ai_providers.py` for transcript-to-clips analysis.
+- `main.py` delegates prompt construction, provider calls, JSON parsing, and clip metadata validation to the provider layer.
+- `app.py` maps request headers into provider environment variables for the clip subprocess.
+- `X-Gemini-Key` still maps to Gemini for backward compatibility.
 - Keep Upload-Post integration separate from AI provider work; publishing is a downstream workflow and should not affect clip detection.
+- Auto Edit/effects still require Gemini because that path uses Gemini video upload; only transcript-to-clips analysis is provider-agnostic in this implementation.
 
 ## Lightweight Local Run Notes
 
@@ -47,6 +57,11 @@
   - backend via Python/FastAPI on `http://localhost:8000`
   - renderer via Node on `http://localhost:3100` only when needed
 - FFmpeg and ffprobe are installed globally through Scoop.
+- Missing OpenShorts runtime packages installed at user level for current system Python: `scenedetect`, `ultralytics`, `mediapipe`, `google-genai`, compatible `torchvision`, and related dependencies.
+- Local scripts:
+  - `scripts\start-backend.ps1`
+  - `scripts\start-dashboard.ps1`
+  - `scripts\start-renderer.ps1`
 
 ## Azure Access Notes
 
@@ -65,3 +80,5 @@
   - set subscription: `az account set --subscription <subscription-id-or-name>`
 - Scope guideline: prefer creating/using a dedicated resource group such as `rg-openshorts` rather than operating broadly across the subscription.
 - Cost guideline: prefer low-cost resources by default and stop/delete compute when not actively testing video jobs.
+- Non-mutating Azure CLI account check passes.
+- `az vm list-usage --location eastus` returned an empty list in this subscription at the time of implementation; no Azure resources were created.
