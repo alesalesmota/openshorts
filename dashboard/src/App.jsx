@@ -215,8 +215,11 @@ export default function App() {
     if (aiConfig.apiKey) {
       localStorage.setItem('aiApiKey_v1', encrypt(aiConfig.apiKey));
       if (aiConfig.provider === 'gemini') localStorage.setItem('gemini_key', aiConfig.apiKey);
+    } else if (backendAiDefaults?.has_api_key) {
+      localStorage.removeItem('aiApiKey_v1');
+      localStorage.removeItem('gemini_key');
     }
-  }, [aiConfig]);
+  }, [aiConfig, backendAiDefaults?.has_api_key]);
 
   useEffect(() => {
     if (uploadPostKey) localStorage.setItem('uploadPostKey_v3', encrypt(uploadPostKey));
@@ -233,9 +236,10 @@ export default function App() {
       .then((data) => {
         if (!data) return;
         setBackendAiDefaults(data);
-        if (!data.has_api_key || aiConfig.apiKey) return;
+        if (!data.has_api_key) return;
         setAiConfig((prev) => ({
           ...prev,
+          apiKey: '',
           provider: data.provider || prev.provider,
           model: data.model || data.azureDeployment || prev.model,
           baseUrl: data.baseUrl || prev.baseUrl,
@@ -245,7 +249,7 @@ export default function App() {
         }));
       })
       .catch(() => {});
-  }, [aiConfig.apiKey]);
+  }, []);
 
   useEffect(() => {
     let interval;
