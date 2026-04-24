@@ -59,6 +59,8 @@ Legacy `X-Gemini-Key` and `GEMINI_API_KEY` still work for Gemini.
 
 If backend env vars include `AI_API_KEY`, the dashboard can use that server-side key without storing the raw key in browser localStorage. The non-secret defaults are exposed at `/api/ai/defaults`.
 
+The model selector reads non-secret model metadata from `/api/ai/models`. For Azure OpenAI it shows deployed, chat-capable deployments only; catalog models without deployment are not callable.
+
 ## Publishing
 
 Upload-Post remains optional and downstream. Configure it in dashboard settings only when publishing clips.

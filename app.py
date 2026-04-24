@@ -7,6 +7,7 @@ import shutil
 import glob
 import time
 import asyncio
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from typing import Dict, Optional, List
 from contextlib import asynccontextmanager
@@ -45,6 +46,129 @@ AI_HEADER_MAP = {
     "AZURE_OPENAI_API_VERSION": "X-Azure-OpenAI-API-Version",
 }
 
+MODEL_SORT_OPTIONS = [
+    {"value": "recommended", "label": "Recommended"},
+    {"value": "cheapest", "label": "Cheapest first"},
+    {"value": "smartest", "label": "Smartest first"},
+    {"value": "newest", "label": "Newest first"},
+    {"value": "fastest", "label": "Fastest first"},
+]
+
+MODEL_CATALOG = {
+    "gemini": [
+        {
+            "id": "gemini-2.5-flash",
+            "model": "gemini-2.5-flash",
+            "label": "Gemini 2.5 Flash",
+            "cost_label": "Free tier / paid after quota",
+            "credit_label": "Google AI Studio free tier can apply",
+            "quality_label": "Fast, strong default",
+            "status_label": "Recommended",
+            "cost_rank": 1,
+            "intelligence_rank": 72,
+            "speed_rank": 1,
+            "release_date": "2025-06-01",
+        },
+        {
+            "id": "gemini-2.5-pro",
+            "model": "gemini-2.5-pro",
+            "label": "Gemini 2.5 Pro",
+            "cost_label": "Free tier / paid after quota",
+            "credit_label": "Higher usage usually costs more",
+            "quality_label": "Deeper reasoning",
+            "status_label": "High quality",
+            "cost_rank": 4,
+            "intelligence_rank": 88,
+            "speed_rank": 4,
+            "release_date": "2025-06-01",
+        },
+    ],
+    "openai": [
+        {
+            "id": "gpt-4.1-nano",
+            "model": "gpt-4.1-nano",
+            "label": "GPT-4.1 Nano",
+            "cost_label": "Paid API tokens",
+            "credit_label": "May use account credits if available",
+            "quality_label": "Very cheap, lightweight",
+            "status_label": "Budget",
+            "cost_rank": 1,
+            "intelligence_rank": 48,
+            "speed_rank": 1,
+            "release_date": "2025-04-14",
+        },
+        {
+            "id": "gpt-4.1-mini",
+            "model": "gpt-4.1-mini",
+            "label": "GPT-4.1 Mini",
+            "cost_label": "Paid API tokens",
+            "credit_label": "May use account credits if available",
+            "quality_label": "Good low-cost clip analysis",
+            "status_label": "Recommended",
+            "cost_rank": 2,
+            "intelligence_rank": 72,
+            "speed_rank": 2,
+            "release_date": "2025-04-14",
+        },
+        {
+            "id": "gpt-4.1",
+            "model": "gpt-4.1",
+            "label": "GPT-4.1",
+            "cost_label": "Paid API tokens",
+            "credit_label": "May use account credits if available",
+            "quality_label": "Higher quality, higher cost",
+            "status_label": "High quality",
+            "cost_rank": 5,
+            "intelligence_rank": 84,
+            "speed_rank": 4,
+            "release_date": "2025-04-14",
+        },
+    ],
+    "openrouter": [
+        {
+            "id": "openrouter/free",
+            "model": "openrouter/free",
+            "label": "OpenRouter Free Router",
+            "cost_label": "Free models only",
+            "credit_label": "Free tier rate limits apply",
+            "quality_label": "Routes to a compatible free model",
+            "status_label": "Free",
+            "cost_rank": 0,
+            "intelligence_rank": 45,
+            "speed_rank": 3,
+            "release_date": "2026-02-01",
+        },
+        {
+            "id": "openai/gpt-4o-mini",
+            "model": "openai/gpt-4o-mini",
+            "label": "OpenAI GPT-4o Mini",
+            "cost_label": "Paid OpenRouter credits",
+            "credit_label": "Provider/account credits may apply",
+            "quality_label": "Cheap general fallback",
+            "status_label": "Budget",
+            "cost_rank": 2,
+            "intelligence_rank": 66,
+            "speed_rank": 2,
+            "release_date": "2024-07-18",
+        },
+    ],
+    "nvidia-nim": [
+        {
+            "id": "meta/llama-3.1-70b-instruct",
+            "model": "meta/llama-3.1-70b-instruct",
+            "label": "Llama 3.1 70B Instruct",
+            "cost_label": "NVIDIA credits/quota",
+            "credit_label": "Developer credits may apply",
+            "quality_label": "Open model, strong enough for transcripts",
+            "status_label": "Recommended",
+            "cost_rank": 2,
+            "intelligence_rank": 70,
+            "speed_rank": 3,
+            "release_date": "2024-07-23",
+        },
+    ],
+}
+
 def build_ai_env(request: Request, require_key: bool = True) -> Dict[str, str]:
     ai_env: Dict[str, str] = {}
     legacy_gemini_key = request.headers.get("X-Gemini-Key")
@@ -72,6 +196,163 @@ def build_ai_env(request: Request, require_key: bool = True) -> Dict[str, str]:
         raise HTTPException(status_code=400, detail="Missing AI API key. Send X-AI-API-Key or legacy X-Gemini-Key.")
 
     return ai_env
+
+def _model_option(provider: str, metadata: Dict, *, deployment: Optional[str] = None, version: Optional[str] = None, source: str = "catalog") -> Dict:
+    model = metadata.get("model") or metadata.get("id") or deployment or ""
+    option_id = deployment or metadata.get("id") or model
+    return {
+        "id": option_id,
+        "provider": provider,
+        "model": model,
+        "deployment": deployment,
+        "label": metadata.get("label") or model,
+        "version": version or metadata.get("version") or "",
+        "source": source,
+        "selectable": True,
+        "functional": True,
+        "cost_label": metadata.get("cost_label") or "Provider billing applies",
+        "credit_label": metadata.get("credit_label") or "Credit status depends on provider account",
+        "quality_label": metadata.get("quality_label") or "General purpose",
+        "status_label": metadata.get("status_label") or "Available",
+        "cost_rank": metadata.get("cost_rank", 99),
+        "intelligence_rank": metadata.get("intelligence_rank", 0),
+        "speed_rank": metadata.get("speed_rank", 99),
+        "release_date": metadata.get("release_date") or version or "",
+    }
+
+
+def _metadata_for_model(provider: str, model: str) -> Dict:
+    compact = (model or "").lower()
+    for item in MODEL_CATALOG.get(provider, []):
+        if compact in {item.get("id", "").lower(), item.get("model", "").lower()}:
+            return item
+
+    if "gpt-4.1-mini" in compact or "gpt-4-1-mini" in compact:
+        return {
+            "id": model,
+            "model": "gpt-4.1-mini",
+            "label": "GPT-4.1 Mini",
+            "cost_label": "Paid Azure credits",
+            "credit_label": "Uses Azure OpenAI pay-as-you-go credits",
+            "quality_label": "Good low-cost clip analysis",
+            "status_label": "Ready",
+            "cost_rank": 2,
+            "intelligence_rank": 72,
+            "speed_rank": 2,
+            "release_date": "2025-04-14",
+        }
+    if "gpt-4.1-nano" in compact or "gpt-4-1-nano" in compact:
+        return {
+            "id": model,
+            "model": "gpt-4.1-nano",
+            "label": "GPT-4.1 Nano",
+            "cost_label": "Paid Azure credits",
+            "credit_label": "Uses Azure OpenAI pay-as-you-go credits",
+            "quality_label": "Very cheap, lightweight",
+            "status_label": "Budget",
+            "cost_rank": 1,
+            "intelligence_rank": 48,
+            "speed_rank": 1,
+            "release_date": "2025-04-14",
+        }
+    if "gpt-4o-mini" in compact:
+        return {
+            "id": model,
+            "model": "gpt-4o-mini",
+            "label": "GPT-4o Mini",
+            "cost_label": "Paid Azure credits",
+            "credit_label": "Uses Azure OpenAI pay-as-you-go credits",
+            "quality_label": "Low-cost general model",
+            "status_label": "Legacy/budget",
+            "cost_rank": 2,
+            "intelligence_rank": 64,
+            "speed_rank": 2,
+            "release_date": "2024-07-18",
+        }
+    return {
+        "id": model,
+        "model": model,
+        "label": model,
+        "cost_label": "Provider billing applies",
+        "credit_label": "Credit status depends on provider account",
+        "quality_label": "Not ranked yet",
+        "status_label": "Available",
+        "cost_rank": 50,
+        "intelligence_rank": 50,
+        "speed_rank": 50,
+        "release_date": "",
+    }
+
+
+def _az_command_path() -> str:
+    default_path = r"C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
+    return default_path if os.path.exists(default_path) else "az"
+
+
+def _azure_account_name_from_endpoint() -> str:
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT") or os.environ.get("AI_BASE_URL") or ""
+    host = urlparse(endpoint).netloc
+    return host.split(".")[0] if host else ""
+
+
+def _azure_deployment_options() -> List[Dict]:
+    resource_group = os.environ.get("AZURE_OPENAI_RESOURCE_GROUP") or os.environ.get("AZURE_RESOURCE_GROUP") or ""
+    account_name = os.environ.get("AZURE_OPENAI_ACCOUNT_NAME") or _azure_account_name_from_endpoint()
+    current_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT") or os.environ.get("AI_MODEL") or ""
+    options: List[Dict] = []
+
+    if resource_group and account_name:
+        try:
+            completed = subprocess.run(
+                [
+                    _az_command_path(),
+                    "cognitiveservices",
+                    "account",
+                    "deployment",
+                    "list",
+                    "--resource-group",
+                    resource_group,
+                    "--name",
+                    account_name,
+                    "--output",
+                    "json",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=25,
+                check=True,
+            )
+            for deployment in json.loads(completed.stdout or "[]"):
+                props = deployment.get("properties") or {}
+                capabilities = props.get("capabilities") or {}
+                model = (props.get("model") or {}).get("name") or deployment.get("name")
+                version = (props.get("model") or {}).get("version") or ""
+                is_ready = props.get("provisioningState") == "Succeeded"
+                supports_chat = capabilities.get("chatCompletion") == "true" or capabilities.get("responses") == "true"
+                if not is_ready or not supports_chat:
+                    continue
+                metadata = _metadata_for_model("azure-openai", model)
+                option = _model_option(
+                    "azure-openai",
+                    metadata,
+                    deployment=deployment.get("name"),
+                    version=version,
+                    source="azure-deployment",
+                )
+                option["functional"] = True
+                option["status_label"] = "Ready"
+                option["is_default"] = deployment.get("name") == current_deployment
+                options.append(option)
+        except Exception:
+            options = []
+
+    if not options and current_deployment:
+        metadata = _metadata_for_model("azure-openai", current_deployment)
+        option = _model_option("azure-openai", metadata, deployment=current_deployment, source="backend-default")
+        option["is_default"] = True
+        options.append(option)
+
+    return options
 
 def _relocate_root_job_artifacts(job_id: str, job_output_dir: str) -> bool:
     """
@@ -213,6 +494,41 @@ async def ai_defaults():
         "azureDeployment": (os.environ.get("AZURE_OPENAI_DEPLOYMENT") or "").strip(),
         "azureApiVersion": (os.environ.get("AZURE_OPENAI_API_VERSION") or "2024-10-21").strip(),
         "has_api_key": bool(api_key),
+    }
+
+@app.get("/api/ai/models")
+async def ai_models(request: Request, provider: Optional[str] = None):
+    """Return non-secret model/deployment options and ranking metadata for Settings."""
+    selected_provider = (
+        provider
+        or request.headers.get("X-AI-Provider")
+        or os.environ.get("AI_PROVIDER")
+        or ("gemini" if os.environ.get("GEMINI_API_KEY") else "gemini")
+    ).strip().lower()
+
+    if selected_provider == "azure-openai":
+        models = _azure_deployment_options()
+        source = "azure-deployments"
+    elif selected_provider == "custom-openai-compatible":
+        current_model = request.headers.get("X-AI-Model") or os.environ.get("AI_MODEL") or ""
+        models = [_model_option(selected_provider, _metadata_for_model(selected_provider, current_model), source="manual")] if current_model else []
+        source = "manual"
+    else:
+        models = [_model_option(selected_provider, item, source="catalog") for item in MODEL_CATALOG.get(selected_provider, [])]
+        source = "catalog"
+
+    return {
+        "provider": selected_provider,
+        "source": source,
+        "sort_options": MODEL_SORT_OPTIONS,
+        "models": models,
+        "notes": {
+            "azure-openai": "Azure shows deployed chat-capable models only. Catalog models without deployment are not callable.",
+            "gemini": "Gemini free tier depends on Google AI Studio quota and billing state.",
+            "openai": "OpenAI API usage is billed by model tokens; account credits may offset charges.",
+            "openrouter": "OpenRouter free models and limits change frequently; :free models are marked as free when routed by OpenRouter.",
+            "nvidia-nim": "NVIDIA NIM availability and credits depend on the NVIDIA account/program.",
+        }.get(selected_provider, "Provider availability depends on account and endpoint."),
     }
 
 class ProcessRequest(BaseModel):

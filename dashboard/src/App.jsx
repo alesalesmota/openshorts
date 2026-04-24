@@ -1,15 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
+  Brain,
   Check,
   ChevronDown,
+  CircleDollarSign,
+  Clock3,
   FileVideo,
   Instagram,
   LayoutDashboard,
+  RefreshCw,
   RotateCcw,
   Scissors,
   Settings,
   Shield,
+  Sparkles,
   Terminal,
   Upload,
   Youtube,
@@ -70,6 +75,25 @@ const buildAiHeaders = (aiConfig) => {
   if (aiConfig.azureApiVersion) headers['X-Azure-OpenAI-API-Version'] = aiConfig.azureApiVersion;
   if (aiConfig.provider === 'gemini') headers['X-Gemini-Key'] = aiConfig.apiKey;
   return headers;
+};
+
+const sortModelOptions = (options, sortMode) => {
+  const list = [...options];
+  const byRecommended = (a, b) =>
+    Number(Boolean(b.is_default)) - Number(Boolean(a.is_default)) ||
+    (a.cost_rank ?? 99) - (b.cost_rank ?? 99) ||
+    (b.intelligence_rank ?? 0) - (a.intelligence_rank ?? 0);
+
+  if (sortMode === 'cheapest') return list.sort((a, b) => (a.cost_rank ?? 99) - (b.cost_rank ?? 99));
+  if (sortMode === 'smartest') return list.sort((a, b) => (b.intelligence_rank ?? 0) - (a.intelligence_rank ?? 0));
+  if (sortMode === 'newest') return list.sort((a, b) => String(b.release_date || '').localeCompare(String(a.release_date || '')));
+  if (sortMode === 'fastest') return list.sort((a, b) => (a.speed_rank ?? 99) - (b.speed_rank ?? 99));
+  return list.sort(byRecommended);
+};
+
+const compactDate = (value) => {
+  if (!value) return 'unranked';
+  return String(value).slice(0, 7);
 };
 
 const pollJob = async (jobId) => {
@@ -151,6 +175,12 @@ export default function App() {
   const [uploadUserId, setUploadUserId] = useState(() => localStorage.getItem('uploadUserId') || '');
   const [userProfiles, setUserProfiles] = useState([]);
   const [backendAiDefaults, setBackendAiDefaults] = useState(null);
+  const [modelOptions, setModelOptions] = useState([]);
+  const [modelSort, setModelSort] = useState('recommended');
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState(null);
+  const [modelSourceNote, setModelSourceNote] = useState('');
+  const [modelRefreshNonce, setModelRefreshNonce] = useState(0);
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [jobId, setJobId] = useState(null);
   const [status, setStatus] = useState('idle');
@@ -168,6 +198,16 @@ export default function App() {
     [aiConfig.provider]
   );
   const hasAiCredential = Boolean(aiConfig.apiKey || backendAiDefaults?.has_api_key);
+  const sortedModelOptions = useMemo(() => sortModelOptions(modelOptions, modelSort), [modelOptions, modelSort]);
+  const showManualModelFallback = aiConfig.provider === 'custom-openai-compatible' || Boolean(modelsError && !modelOptions.length);
+  const selectedModelOption = useMemo(
+    () => modelOptions.find((option) => (
+      option.id === aiConfig.model ||
+      option.model === aiConfig.model ||
+      option.deployment === aiConfig.azureDeployment
+    )),
+    [modelOptions, aiConfig.model, aiConfig.azureDeployment]
+  );
 
   useEffect(() => {
     try {
@@ -250,6 +290,53 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setModelsLoading(true);
+    setModelsError(null);
+
+    fetch(getApiUrl(`/api/ai/models?provider=${encodeURIComponent(aiConfig.provider)}`), {
+      headers: buildAiHeaders(aiConfig),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(await res.text());
+        return res.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const options = data.models || [];
+        setModelOptions(options);
+        setModelSourceNote(data.notes || '');
+
+        const hasCurrent = options.some((option) => (
+          option.id === aiConfig.model ||
+          option.model === aiConfig.model ||
+          option.deployment === aiConfig.azureDeployment
+        ));
+        if (!hasCurrent && options.length) {
+          const first = sortModelOptions(options, modelSort)[0];
+          setAiConfig((prev) => ({
+            ...prev,
+            model: first.deployment || first.model || first.id,
+            azureDeployment: prev.provider === 'azure-openai' ? (first.deployment || first.id) : prev.azureDeployment,
+          }));
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setModelOptions([]);
+          setModelsError(e.message || 'Could not load models');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [aiConfig.provider, aiConfig.apiKey, aiConfig.baseUrl, aiConfig.azureEndpoint, backendAiDefaults?.has_api_key, modelRefreshNonce]);
 
   useEffect(() => {
     let interval;
@@ -341,6 +428,16 @@ export default function App() {
     setSyncTrigger((prev) => prev + 1);
   };
 
+  const handleModelSelect = (optionId) => {
+    const option = modelOptions.find((item) => item.id === optionId);
+    if (!option) return;
+    setAiConfig((prev) => ({
+      ...prev,
+      model: option.deployment || option.model || option.id,
+      azureDeployment: prev.provider === 'azure-openai' ? (option.deployment || option.id) : prev.azureDeployment,
+    }));
+  };
+
   const Sidebar = () => (
     <div className="flex h-full w-20 shrink-0 flex-col border-r border-white/5 bg-surface transition-all duration-300 lg:w-64">
       <div className="flex items-center gap-3 p-6">
@@ -416,7 +513,12 @@ export default function App() {
               value={aiConfig.provider}
               onChange={(e) => {
                 const next = providerOptions.find((p) => p.value === e.target.value);
-                setAiConfig((prev) => ({ ...prev, provider: e.target.value, model: prev.model || next?.defaultModel || '' }));
+                setAiConfig((prev) => ({
+                  ...prev,
+                  provider: e.target.value,
+                  model: next?.defaultModel || '',
+                  azureDeployment: e.target.value === 'azure-openai' ? prev.azureDeployment : '',
+                }));
               }}
               className="input-field"
             >
@@ -426,15 +528,102 @@ export default function App() {
             </select>
           </label>
 
-          <label className="space-y-2">
-            <span className="block text-sm text-zinc-400">Model / Deployment</span>
-            <input
-              value={aiConfig.model}
-              onChange={(e) => setAiConfig((prev) => ({ ...prev, model: e.target.value }))}
-              className="input-field font-mono"
-              placeholder="gemini-2.5-flash"
-            />
-          </label>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="block text-sm text-zinc-400">Model / Deployment</span>
+              <select
+                value={modelSort}
+                onChange={(e) => setModelSort(e.target.value)}
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-zinc-300 outline-none transition-colors hover:bg-white/[0.07]"
+              >
+                <option value="recommended">Recommended</option>
+                <option value="cheapest">Cheapest</option>
+                <option value="smartest">Smartest</option>
+                <option value="newest">Newest</option>
+                <option value="fastest">Fastest</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <select
+                value={selectedModelOption?.id || ''}
+                onChange={(e) => handleModelSelect(e.target.value)}
+                disabled={modelsLoading || !sortedModelOptions.length}
+                className="input-field font-mono"
+              >
+                <option value="" disabled>
+                  {modelsLoading ? 'Loading models...' : 'No callable models found'}
+                </option>
+                {sortedModelOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}{option.deployment ? ` / ${option.deployment}` : ''}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setModelRefreshNonce((value) => value + 1)}
+                className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-zinc-300 transition-colors hover:bg-white/[0.08] hover:text-white"
+                title="Refresh model list"
+              >
+                <RefreshCw size={16} />
+              </button>
+            </div>
+            {showManualModelFallback && (
+              <input
+                value={aiConfig.model}
+                onChange={(e) => setAiConfig((prev) => ({ ...prev, model: e.target.value }))}
+                className="input-field font-mono"
+                placeholder="Manual model id"
+              />
+            )}
+          </div>
+
+          {(selectedModelOption || modelsError || modelSourceNote) && (
+            <div className="md:col-span-2 border-t border-white/10 pt-4">
+              {selectedModelOption && (
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-mono text-sm font-semibold text-white">
+                        {selectedModelOption.label}
+                      </span>
+                      <span className="rounded-full border border-green-500/20 bg-green-500/10 px-2 py-0.5 text-[10px] font-medium text-green-300">
+                        {selectedModelOption.status_label}
+                      </span>
+                      {selectedModelOption.deployment && (
+                        <span className="rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-200">
+                          deployed
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {selectedModelOption.deployment ? `Deployment: ${selectedModelOption.deployment}` : selectedModelOption.model}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] md:grid-cols-4">
+                    <span className="flex items-center gap-1 rounded-lg border border-white/5 bg-black/20 px-2 py-1 text-zinc-300">
+                      <CircleDollarSign size={12} className="text-emerald-300" /> {selectedModelOption.cost_label}
+                    </span>
+                    <span className="flex items-center gap-1 rounded-lg border border-white/5 bg-black/20 px-2 py-1 text-zinc-300">
+                      <Brain size={12} className="text-sky-300" /> IQ {selectedModelOption.intelligence_rank || '?'}
+                    </span>
+                    <span className="flex items-center gap-1 rounded-lg border border-white/5 bg-black/20 px-2 py-1 text-zinc-300">
+                      <Clock3 size={12} className="text-amber-300" /> {compactDate(selectedModelOption.release_date)}
+                    </span>
+                    <span className="flex items-center gap-1 rounded-lg border border-white/5 bg-black/20 px-2 py-1 text-zinc-300">
+                      <Sparkles size={12} className="text-violet-300" /> {selectedModelOption.quality_label}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {modelSourceNote && (
+                <p className="mt-3 text-xs leading-relaxed text-zinc-500">{modelSourceNote}</p>
+              )}
+              {modelsError && (
+                <p className="mt-3 text-xs text-red-300">{modelsError}</p>
+              )}
+            </div>
+          )}
 
           <label className="space-y-2 md:col-span-2">
             <span className="block text-sm text-zinc-400">API Key</span>
@@ -478,6 +667,7 @@ export default function App() {
                 <input
                   value={aiConfig.azureDeployment}
                   onChange={(e) => setAiConfig((prev) => ({ ...prev, azureDeployment: e.target.value }))}
+                  readOnly={Boolean(selectedModelOption?.deployment)}
                   className="input-field font-mono"
                   placeholder="deployment-name"
                 />

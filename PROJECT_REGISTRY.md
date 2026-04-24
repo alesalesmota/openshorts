@@ -95,6 +95,9 @@
   - sku: `Standard`
   - capacity: `1`
 - Backend now supports non-secret AI defaults at `/api/ai/defaults`, allowing local sessions to use a server-side API key without storing the raw key in browser localStorage.
+- Backend now supports non-secret model/deployment discovery at `/api/ai/models`.
+- Azure model discovery returns only deployed, chat-capable, succeeded deployments. Catalog-only Azure models are intentionally hidden because they are not callable until deployed.
+- Dashboard Settings uses a model/deployment dropdown with status metadata and sort modes: recommended, cheapest, smartest, newest, fastest.
 - Current local backend session was started with Azure OpenAI env vars and `has_api_key=true`; temp key file was deleted after process start.
 - A minimal Azure chat completions ping returned `{"ok":true}`.
 - Candidate models available in that resource include `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-5.4-mini`, and newer listed models as of the local CLI check on 2026-04-24.
