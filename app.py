@@ -694,6 +694,8 @@ async def process_endpoint(
     cmd = ["python", "-u", "main.py"] # -u for unbuffered
     env = os.environ.copy()
     env.update(ai_env)
+    env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+    env.setdefault("OMP_NUM_THREADS", "1")
     
     if url:
         cmd.extend(["-u", url])

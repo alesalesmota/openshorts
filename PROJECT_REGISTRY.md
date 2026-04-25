@@ -107,3 +107,4 @@
 - Do not store Azure API keys in repo files. Retrieve keys via CLI only when configuring local runtime, Key Vault, or explicit user-approved deployment flow.
 - Local backend worker startup is sensitive to Windows stdio encoding when launched headless. `app.py` now reconfigures stdout/stderr as UTF-8 and logs crashed background tasks so queue failures are visible.
 - Local Python runtime for the clip pipeline is pinned to `mediapipe==0.10.14`, `numpy==1.26.4`, and OpenCV `4.11.0.86` because `mediapipe==0.10.33` no longer exposes the `mp.solutions` API used by `main.py`.
+- On Windows local CPU runs, MediaPipe/TFLite and Faster-Whisper can both load Intel OpenMP and crash with `OMP: Error #15: Initializing libiomp5md.dll`. Job subprocesses set `KMP_DUPLICATE_LIB_OK=TRUE` and `OMP_NUM_THREADS=1` to keep local transcription usable.
