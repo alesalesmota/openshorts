@@ -11,6 +11,14 @@ OpenShorts is now focused on long-form video clipping and clip publishing. Docke
 
 ## Run Services
 
+Inside Codex, use the top-right Run button. It runs:
+
+```powershell
+.\scripts\start-codex-dev.ps1
+```
+
+That starts backend + dashboard, loads the Azure OpenAI key from the local Azure CLI session without saving the raw key in the repo, and writes logs to `%TEMP%\openshorts-codex`.
+
 Open three PowerShell windows from the repository root:
 
 ```powershell
