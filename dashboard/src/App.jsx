@@ -403,15 +403,16 @@ export default function App() {
     }
   };
 
-  const handleProcess = async (data) => {
+  const handleProcess = async (data, options = {}) => {
     if (!hasAiCredential) {
       setShowKeyModal(true);
       return;
     }
 
     setStatus('processing');
-    setLogs([`Starting clip analysis with ${providerLabel}...`]);
+    setLogs([`${options.isRetry ? 'Retrying' : 'Starting'} clip analysis with ${providerLabel}...`]);
     setResults(null);
+    setJobId(null);
     setProcessingMedia(data);
 
     try {
@@ -435,6 +436,14 @@ export default function App() {
       setStatus('error');
       setLogs((prev) => [...prev, `Error starting job: ${e.message}`]);
     }
+  };
+
+  const handleRetry = () => {
+    if (!processingMedia) {
+      setLogs((prev) => [...prev, 'Retry unavailable: original input is no longer available.']);
+      return;
+    }
+    handleProcess(processingMedia, { isRetry: true });
   };
 
   const handleReset = () => {
@@ -869,7 +878,22 @@ export default function App() {
                   <Terminal size={32} className="text-red-400" />
                   <div>
                     <p className="font-medium text-zinc-300">Job stopped</p>
-                    <p className="mt-1 max-w-sm text-sm">Check the logs on the left, then start a new job.</p>
+                    <p className="mt-1 max-w-sm text-sm">Check the logs on the left, then retry the same input or start a new job.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-3">
+                    <button
+                      onClick={handleRetry}
+                      disabled={!processingMedia}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-primary/30 bg-primary/15 px-4 text-sm font-medium text-primary transition-colors hover:border-primary/50 hover:bg-primary/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-zinc-600"
+                    >
+                      <RefreshCw size={16} /> Retry
+                    </button>
+                    <button
+                      onClick={handleReset}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-4 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.07] hover:text-white"
+                    >
+                      <RotateCcw size={16} /> New job
+                    </button>
                   </div>
                 </div>
               ) : (
