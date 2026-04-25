@@ -14,6 +14,13 @@ $DashboardErr = Join-Path $LogDir "dashboard.err.log"
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
+function Write-Status {
+  param([string]$Message = "")
+
+  [Console]::Out.WriteLine($Message)
+  [Console]::Out.Flush()
+}
+
 function Stop-PortListener {
   param([int]$Port)
 
@@ -23,7 +30,7 @@ function Stop-PortListener {
     if ($ownerPid -and $ownerPid -ne $PID) {
       try {
         Stop-Process -Id $ownerPid -Force -ErrorAction Stop
-        Write-Host "Stopped existing process $ownerPid on port $Port."
+        Write-Status "Stopped existing process $ownerPid on port $Port."
       } catch {
         Write-Warning "Could not stop process $ownerPid on port ${Port}: $($_.Exception.Message)"
       }
@@ -31,23 +38,34 @@ function Stop-PortListener {
   }
 }
 
-function Wait-Http {
+function Wait-HttpReady {
   param(
     [string]$Url,
     [string]$Name,
     [int]$Attempts = 45
   )
 
+  $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
   for ($i = 1; $i -le $Attempts; $i++) {
-    try {
-      $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2
-      if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
-        Write-Host "$Name ready: $Url"
+    if ($curl) {
+      & $curl.Source --silent --fail --max-time 2 $Url | Out-Null
+      if ($LASTEXITCODE -eq 0) {
+        Write-Status "$Name ready: $Url"
         return
       }
-    } catch {
-      Start-Sleep -Seconds 1
+    } else {
+      try {
+        $request = [Net.HttpWebRequest]::Create($Url)
+        $request.Timeout = 2000
+        $request.ReadWriteTimeout = 2000
+        $response = $request.GetResponse()
+        $response.Close()
+        Write-Status "$Name ready: $Url"
+        return
+      } catch {
+      }
     }
+    Start-Sleep -Seconds 1
   }
 
   throw "$Name did not become ready at $Url. Check logs in $LogDir."
@@ -142,17 +160,22 @@ Set-Location -LiteralPath '$Root'
 $BackendEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($BackendScript))
 $DashboardEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($DashboardScript))
 
+Write-Status "Starting backend..."
 $BackendProcess = Start-Process -FilePath $PowerShellExe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $BackendEncoded) -WindowStyle Hidden -RedirectStandardOutput $BackendOut -RedirectStandardError $BackendErr -PassThru
 Start-Sleep -Seconds 2
+Write-Status "Starting dashboard..."
 $DashboardProcess = Start-Process -FilePath $PowerShellExe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $DashboardEncoded) -WindowStyle Hidden -RedirectStandardOutput $DashboardOut -RedirectStandardError $DashboardErr -PassThru
 
-Wait-Http -Url "http://localhost:8000/api/ai/defaults" -Name "Backend"
-Wait-Http -Url "http://localhost:5175/" -Name "Dashboard"
+Wait-HttpReady -Url "http://127.0.0.1:8000/api/ai/defaults" -Name "Backend"
+Wait-HttpReady -Url "http://127.0.0.1:5175/" -Name "Dashboard"
 
-Write-Host ""
-Write-Host "OpenShorts local dev ready."
-Write-Host "Dashboard: http://localhost:5175"
-Write-Host "Backend:   http://localhost:8000"
-Write-Host "Renderer:  not started by default"
-Write-Host "Logs:      $LogDir"
-Write-Host "PIDs:      backend=$($BackendProcess.Id), dashboard=$($DashboardProcess.Id)"
+$BackendServerPid = (Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess
+$DashboardServerPid = (Get-NetTCPConnection -LocalPort 5175 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess
+
+Write-Status ""
+Write-Status "OpenShorts local dev ready."
+Write-Status "Dashboard: http://localhost:5175"
+Write-Status "Backend:   http://localhost:8000"
+Write-Status "Renderer:  not started by default"
+Write-Status "Logs:      $LogDir"
+Write-Status "PIDs:      backend=$BackendServerPid, dashboard=$DashboardServerPid"
