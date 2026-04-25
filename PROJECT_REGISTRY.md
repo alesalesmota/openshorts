@@ -64,6 +64,7 @@
   - `scripts\start-renderer.ps1`
   - `scripts\start-codex-dev.ps1`
 - Codex top-right Run action starts `scripts\start-codex-dev.ps1` from the repo root. It launches backend + dashboard, fetches the Azure OpenAI key through local Azure CLI only for the backend process environment, and writes runtime logs to `%TEMP%\openshorts-codex`.
+- The Codex Run script is idempotent: repeated clicks report existing backend/dashboard instead of restarting them. Use `scripts\start-codex-dev.ps1 -Restart` only when a clean restart is needed.
 
 ## Azure Access Notes
 

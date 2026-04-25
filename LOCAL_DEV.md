@@ -19,6 +19,12 @@ Inside Codex, use the top-right Run button. It runs:
 
 That starts backend + dashboard, loads the Azure OpenAI key from the local Azure CLI session without saving the raw key in the repo, and writes logs to `%TEMP%\openshorts-codex`.
 
+The Run action is safe to click repeatedly. If backend/dashboard are already listening, it reports them as already running instead of restarting them. To force a clean restart manually:
+
+```powershell
+.\scripts\start-codex-dev.ps1 -Restart
+```
+
 Open three PowerShell windows from the repository root:
 
 ```powershell

@@ -1,5 +1,5 @@
 param(
-  [switch]$NoRestart,
+  [switch]$Restart,
   [switch]$NoAzure
 )
 
@@ -38,6 +38,26 @@ function Stop-PortListener {
   }
 }
 
+function Test-HttpReady {
+  param([string]$Url)
+  $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+  if ($curl) {
+    & $curl.Source --silent --fail --max-time 2 $Url | Out-Null
+    return ($LASTEXITCODE -eq 0)
+  }
+
+  try {
+    $request = [Net.HttpWebRequest]::Create($Url)
+    $request.Timeout = 2000
+    $request.ReadWriteTimeout = 2000
+    $response = $request.GetResponse()
+    $response.Close()
+    return $true
+  } catch {
+    return $false
+  }
+}
+
 function Wait-HttpReady {
   param(
     [string]$Url,
@@ -45,25 +65,10 @@ function Wait-HttpReady {
     [int]$Attempts = 45
   )
 
-  $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
   for ($i = 1; $i -le $Attempts; $i++) {
-    if ($curl) {
-      & $curl.Source --silent --fail --max-time 2 $Url | Out-Null
-      if ($LASTEXITCODE -eq 0) {
-        Write-Status "$Name ready: $Url"
-        return
-      }
-    } else {
-      try {
-        $request = [Net.HttpWebRequest]::Create($Url)
-        $request.Timeout = 2000
-        $request.ReadWriteTimeout = 2000
-        $response = $request.GetResponse()
-        $response.Close()
-        Write-Status "$Name ready: $Url"
-        return
-      } catch {
-      }
+    if (Test-HttpReady -Url $Url) {
+      Write-Status "$Name ready: $Url"
+      return
     }
     Start-Sleep -Seconds 1
   }
@@ -71,12 +76,32 @@ function Wait-HttpReady {
   throw "$Name did not become ready at $Url. Check logs in $LogDir."
 }
 
-if (-not $NoRestart) {
+$BackendUrl = "http://127.0.0.1:8000/api/ai/defaults"
+$DashboardUrl = "http://127.0.0.1:5175/"
+
+$BackendAlreadyReady = Test-HttpReady -Url $BackendUrl
+$DashboardAlreadyReady = Test-HttpReady -Url $DashboardUrl
+
+if ($Restart) {
   Stop-PortListener -Port 8000
   Stop-PortListener -Port 5175
+  $BackendAlreadyReady = $false
+  $DashboardAlreadyReady = $false
+} else {
+  if ($BackendAlreadyReady) {
+    Write-Status "Backend already running: $BackendUrl"
+  }
+  if ($DashboardAlreadyReady) {
+    Write-Status "Dashboard already running: $DashboardUrl"
+  }
 }
 
-Remove-Item -LiteralPath $BackendOut, $BackendErr, $DashboardOut, $DashboardErr -ErrorAction SilentlyContinue
+if (-not $BackendAlreadyReady) {
+  Remove-Item -LiteralPath $BackendOut, $BackendErr -ErrorAction SilentlyContinue
+}
+if (-not $DashboardAlreadyReady) {
+  Remove-Item -LiteralPath $DashboardOut, $DashboardErr -ErrorAction SilentlyContinue
+}
 
 $PowerShellExe = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
 if (-not $PowerShellExe) {
@@ -160,14 +185,21 @@ Set-Location -LiteralPath '$Root'
 $BackendEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($BackendScript))
 $DashboardEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($DashboardScript))
 
-Write-Status "Starting backend..."
-$BackendProcess = Start-Process -FilePath $PowerShellExe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $BackendEncoded) -WindowStyle Hidden -RedirectStandardOutput $BackendOut -RedirectStandardError $BackendErr -PassThru
-Start-Sleep -Seconds 2
-Write-Status "Starting dashboard..."
-$DashboardProcess = Start-Process -FilePath $PowerShellExe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $DashboardEncoded) -WindowStyle Hidden -RedirectStandardOutput $DashboardOut -RedirectStandardError $DashboardErr -PassThru
+if (-not $BackendAlreadyReady) {
+  Stop-PortListener -Port 8000
+  Write-Status "Starting backend..."
+  Start-Process -FilePath $PowerShellExe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $BackendEncoded) -WindowStyle Hidden -RedirectStandardOutput $BackendOut -RedirectStandardError $BackendErr | Out-Null
+  Start-Sleep -Seconds 2
+}
 
-Wait-HttpReady -Url "http://127.0.0.1:8000/api/ai/defaults" -Name "Backend"
-Wait-HttpReady -Url "http://127.0.0.1:5175/" -Name "Dashboard"
+if (-not $DashboardAlreadyReady) {
+  Stop-PortListener -Port 5175
+  Write-Status "Starting dashboard..."
+  Start-Process -FilePath $PowerShellExe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $DashboardEncoded) -WindowStyle Hidden -RedirectStandardOutput $DashboardOut -RedirectStandardError $DashboardErr | Out-Null
+}
+
+Wait-HttpReady -Url $BackendUrl -Name "Backend"
+Wait-HttpReady -Url $DashboardUrl -Name "Dashboard"
 
 $BackendServerPid = (Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess
 $DashboardServerPid = (Get-NetTCPConnection -LocalPort 5175 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess
