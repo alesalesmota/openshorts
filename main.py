@@ -849,9 +849,8 @@ if __name__ == '__main__':
         clips_data = get_viral_clips(transcript, duration)
         
         if not clips_data or 'shorts' not in clips_data:
-            print("❌ Failed to identify clips. Converting whole video as fallback.")
-            output_file = os.path.join(output_dir, f"{video_title}_vertical.mp4")
-            process_video_to_vertical(input_video, output_file)
+            print("❌ Failed to identify clips. Stopping before rendering an unusable whole-video short.")
+            exit(2)
         else:
             print(f"🔥 Found {len(clips_data['shorts'])} viral clips!")
             

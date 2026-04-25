@@ -80,6 +80,17 @@ class AIProvidersTest(unittest.TestCase):
         self.assertEqual(result["shorts"][0]["video_title_for_youtube_short"], "Title")
         self.assertEqual(result["cost_analysis"]["provider"], "gemini")
 
+    def test_ai_clip_ranges_are_normalized(self):
+        config = AIProviderConfig(provider="gemini", api_key="key", model="gemini-2.5-flash")
+        payload = '{"shorts":[{"start":10,"end":500,"video_description_for_tiktok":"TikTok","video_title_for_youtube_short":"Title","viral_hook_text":"Hook"},{"start":80,"end":82,"video_description_for_tiktok":"Short","video_title_for_youtube_short":"Short","viral_hook_text":"Hook"}]}'
+        with patch("ai_providers._call_gemini", return_value=(payload, {})):
+            result = analyze_clips(TRANSCRIPT, 100, config)
+
+        self.assertEqual(result["shorts"][0]["start"], 10)
+        self.assertEqual(result["shorts"][0]["end"], 70)
+        self.assertEqual(result["shorts"][1]["start"], 80)
+        self.assertEqual(result["shorts"][1]["end"], 95)
+
     @patch("httpx.Client", FakeClient)
     def test_openai_compatible_adapter(self):
         config = AIProviderConfig(provider="openai", api_key="key", model="gpt-4o-mini")

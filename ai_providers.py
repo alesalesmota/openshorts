@@ -102,7 +102,7 @@ def analyze_clips(transcript_result: Dict[str, Any], video_duration: float, conf
         raise ClipAnalysisError(f"Unsupported AI provider: {config.provider}")
 
     parsed = parse_clip_json(text)
-    _validate_clip_ranges(parsed, video_duration)
+    _normalize_clip_ranges(parsed, video_duration)
     parsed["cost_analysis"] = {
         "provider": config.provider,
         "model": config.model,
@@ -164,16 +164,38 @@ def parse_clip_json(raw_text: str) -> Dict[str, Any]:
     return data
 
 
-def _validate_clip_ranges(data: Dict[str, Any], video_duration: float) -> None:
+def _normalize_clip_ranges(data: Dict[str, Any], video_duration: float) -> None:
     max_duration = float(video_duration)
+    valid_clips = []
     for index, clip in enumerate(data.get("shorts", [])):
-        start = float(clip["start"])
-        end = float(clip["end"])
+        start = max(0.0, min(float(clip["start"]), max_duration))
+        end = max(0.0, min(float(clip["end"]), max_duration))
+        if end <= start:
+            continue
+
         duration = end - start
-        if end > max_duration:
-            raise ClipAnalysisError(f"Clip {index + 1} ends after the source video duration.")
-        if duration < 15 or duration > 60:
-            raise ClipAnalysisError(f"Clip {index + 1} duration must be between 15 and 60 seconds.")
+        if duration > 60:
+            end = min(start + 60, max_duration)
+            duration = end - start
+
+        if duration < 15:
+            if start + 15 <= max_duration:
+                end = start + 15
+            elif max_duration >= 15:
+                start = max(0.0, max_duration - 15)
+                end = max_duration
+            else:
+                continue
+
+        normalized = dict(clip)
+        normalized["start"] = round(start, 3)
+        normalized["end"] = round(end, 3)
+        valid_clips.append(normalized)
+
+    if not valid_clips:
+        raise ClipAnalysisError("AI provider returned no clips that fit the 15-60 second range.")
+
+    data["shorts"] = valid_clips
 
 
 def _call_gemini(config: AIProviderConfig, prompt: str) -> tuple[str, Dict[str, Any]]:
