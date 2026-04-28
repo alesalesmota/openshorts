@@ -26,6 +26,12 @@ See [LOCAL_DEV.md](LOCAL_DEV.md).
 Quick start from repo root:
 
 ```powershell
+.\start.bat
+```
+
+Or run services manually:
+
+```powershell
 .\scripts\start-backend.ps1
 ```
 

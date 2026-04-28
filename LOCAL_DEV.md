@@ -25,6 +25,12 @@ The Run action is safe to click repeatedly. If backend/dashboard are already lis
 .\scripts\start-codex-dev.ps1 -Restart
 ```
 
+From the repo root, `start.bat` runs the same backend + dashboard startup path and can be double-clicked:
+
+```powershell
+.\start.bat
+```
+
 Open three PowerShell windows from the repository root:
 
 ```powershell
